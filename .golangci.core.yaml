@@ -1,0 +1,23 @@
+version: "2"
+
+run:
+  timeout: 2m
+  tests: true
+  relative-path-mode: gomod
+
+linters:
+  default: none
+  enable:
+    - govet
+    - errcheck
+    - ineffassign
+    - unused
+    - staticcheck
+    - sqlclosecheck
+  settings:
+    errcheck:
+      verbose: true
+
+issues:
+  max-issues-per-linter: 0
+  max-same-issues: 0
