@@ -30,5 +30,6 @@ func RunMigrations(dsn string) error {
 	}
 
 	slog.Info("migrations ran successfully")
+
 	return nil
 }

@@ -25,16 +25,19 @@ func (h *Handler) Subscribe(w http.ResponseWriter, r *http.Request) {
 	req, err := decodeSubscriptionRequest(r)
 	if err != nil {
 		util.WriteErrorResponse(w, http.StatusBadRequest, err.Error())
+
 		return
 	}
 
 	if req.Email == "" || req.Repo == "" {
 		util.WriteErrorResponse(w, http.StatusBadRequest, "email/repo is empty")
+
 		return
 	}
 
 	if err := h.subscriptionService.Subscribe(r.Context(), req.Email, req.Repo); err != nil {
 		handleError(w, err)
+
 		return
 	}
 
@@ -48,12 +51,14 @@ func (h *Handler) Confirm(w http.ResponseWriter, r *http.Request) {
 
 	if token == "" {
 		http.Error(w, "Invalid token", http.StatusBadRequest)
+
 		return
 	}
 
 	err := h.subscriptionService.Confirm(r.Context(), token)
 	if err != nil {
 		handleError(w, err)
+
 		return
 	}
 
@@ -66,12 +71,14 @@ func (h *Handler) Unsubscribe(w http.ResponseWriter, r *http.Request) {
 
 	if token == "" || len(token) < 8 {
 		http.Error(w, "Invalid token", http.StatusBadRequest)
+
 		return
 	}
 
 	err := h.subscriptionService.Unsubscribe(r.Context(), token)
 	if err != nil {
 		handleError(w, err)
+
 		return
 	}
 	util.WriteJSONResponse(w, http.StatusOK, map[string]string{
@@ -84,12 +91,14 @@ func (h *Handler) ListSubscriptions(w http.ResponseWriter, r *http.Request) {
 
 	if email == "" {
 		util.WriteErrorResponse(w, http.StatusBadRequest, "empty email")
+
 		return
 	}
 
 	subscriptions, err := h.subscriptionService.ListByEmail(r.Context(), email)
 	if err != nil {
 		handleError(w, err)
+
 		return
 	}
 

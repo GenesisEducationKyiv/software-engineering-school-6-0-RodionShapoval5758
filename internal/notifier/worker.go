@@ -73,6 +73,7 @@ func (w *Worker) Start(ctx context.Context, loopDuration time.Duration) error {
 func (w *Worker) handleScanError(err error) {
 	if errors.Is(err, github.ErrRateLimited) {
 		slog.Warn("GitHub API rate limit exceeded. Pausing scanner until next interval.")
+
 		return
 	}
 	slog.Error("worker scan pass failed unexpectedly", "error", err)
@@ -103,6 +104,7 @@ func (w *Worker) runOneScan(ctx context.Context) error {
 			if err := w.processRepository(scanCtx, r); err != nil {
 				if errors.Is(err, github.ErrRateLimited) {
 					cancelScan()
+
 					return
 				}
 				slog.Error(
@@ -114,6 +116,7 @@ func (w *Worker) runOneScan(ctx context.Context) error {
 					"error",
 					err,
 				)
+
 				return
 			}
 		}(repo)
@@ -138,8 +141,10 @@ func (w *Worker) processRepository(ctx context.Context, repo domain.Repository) 
 				"repository",
 				repo.FullName,
 			)
+
 			return nil
 		}
+
 		return err
 	}
 
@@ -153,6 +158,7 @@ func (w *Worker) processRepository(ctx context.Context, repo domain.Repository) 
 			"tag",
 			release.Tag,
 		)
+
 		return nil
 	}
 
@@ -199,6 +205,7 @@ func (w *Worker) processRepository(ctx context.Context, repo domain.Repository) 
 				"error",
 				err,
 			)
+
 			continue
 		}
 

@@ -38,7 +38,7 @@ func TestCheckRepoNotFound(t *testing.T) {
 
 func TestCheckRepoRateLimited(t *testing.T) {
 	client, closeServer := newTestGithubClient(t, func(w http.ResponseWriter, r *http.Request) {
-		w.Header().Set("X-RateLimit-Remaining", "0")
+		w.Header().Set("X-Ratelimit-Remaining", "0")
 		w.WriteHeader(http.StatusForbidden)
 	})
 	defer closeServer()

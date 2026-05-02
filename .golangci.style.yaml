@@ -1,0 +1,23 @@
+version: "2"
+
+run:
+  timeout: 2m
+  tests: true
+  relative-path-mode: gomod
+
+linters:
+  default: none
+  enable:
+    - canonicalheader
+    - dupl
+    - nlreturn
+    - recvcheck
+    - tagalign
+    - whitespace
+  settings:
+    dupl:
+      threshold: 150
+
+issues:
+  max-issues-per-linter: 0
+  max-same-issues: 0

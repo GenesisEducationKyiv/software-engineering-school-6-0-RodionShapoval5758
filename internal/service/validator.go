@@ -15,7 +15,6 @@ func validateEmailFormat(email string) error {
 }
 
 func validateRepoFormat(repo string) error {
-
 	parts := strings.Split(repo, "/")
 
 	if len(parts) != 2 {
