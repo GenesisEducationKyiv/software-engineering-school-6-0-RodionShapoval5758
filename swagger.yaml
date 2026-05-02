@@ -1,0 +1,134 @@
+swagger: "2.0"
+info:
+  description: "GitHub Release Notification API that allows users to subscribe to email notifications about new releases of a chosen GitHub repository."
+  version: "1.0.0"
+  title: "GitHub Release Notification API"
+host: "releases-api.app"
+basePath: "/api"
+tags:
+  - name: "subscription"
+    description: "Subscription management operations"
+schemes:
+  - "http"
+  - "https"
+paths:
+  /subscribe:
+    post:
+      tags:
+        - "subscription"
+      summary: "Subscribe to release notifications"
+      description: "Subscribe an email to receive notifications about new releases of a GitHub repository. The repository is validated via GitHub API."
+      operationId: "subscribe"
+      consumes:
+        - "application/json"
+        - "application/x-www-form-urlencoded"
+      produces:
+        - "application/json"
+      parameters:
+        - name: "email"
+          in: "formData"
+          description: "Email address to subscribe"
+          required: true
+          type: "string"
+        - name: "repo"
+          in: "formData"
+          description: "GitHub repository in owner/repo format (e.g., golang/go)"
+          required: true
+          type: "string"
+      responses:
+        "200":
+          description: "Subscription successful. Confirmation email sent."
+        "400":
+          description: "Invalid input (e.g., invalid repo format)"
+        "404":
+          description: "Repository not found on GitHub"
+        "409":
+          description: "Email already subscribed to this repository"
+  /confirm/{token}:
+    get:
+      tags:
+        - "subscription"
+      summary: "Confirm email subscription"
+      description: "Confirms a subscription using the token sent in the confirmation email."
+      operationId: "confirmSubscription"
+      parameters:
+        - name: "token"
+          in: "path"
+          description: "Confirmation token"
+          required: true
+          type: "string"
+      produces:
+        - "application/json"
+      responses:
+        "200":
+          description: "Subscription confirmed successfully"
+        "400":
+          description: "Invalid token"
+        "404":
+          description: "Token not found"
+  /unsubscribe/{token}:
+    get:
+      tags:
+        - "subscription"
+      summary: "Unsubscribe from release notifications"
+      description: "Unsubscribes an email from release notifications using the token sent in emails."
+      operationId: "unsubscribe"
+      parameters:
+        - name: "token"
+          in: "path"
+          description: "Unsubscribe token"
+          required: true
+          type: "string"
+      produces:
+        - "application/json"
+      responses:
+        "200":
+          description: "Unsubscribed successfully"
+        "400":
+          description: "Invalid token"
+        "404":
+          description: "Token not found"
+  /subscriptions:
+    get:
+      tags:
+        - "subscription"
+      summary: "Get subscriptions for an email"
+      description: "Returns all active subscriptions for the given email address."
+      operationId: "getSubscriptions"
+      parameters:
+        - name: "email"
+          in: "query"
+          description: "Email address to look up subscriptions for"
+          required: true
+          type: "string"
+      produces:
+        - "application/json"
+      responses:
+        "200":
+          description: "Successful operation - list of subscriptions returned"
+          schema:
+            type: "array"
+            items:
+              $ref: "#/definitions/Subscription"
+        "400":
+          description: "Invalid email"
+definitions:
+  Subscription:
+    type: "object"
+    required:
+      - "email"
+      - "repo"
+    properties:
+      email:
+        type: "string"
+        description: "Email address"
+      repo:
+        type: "string"
+        description: "GitHub repository in owner/repo format"
+      confirmed:
+        type: "boolean"
+        description: "Whether the subscription is confirmed"
+      last_seen_tag:
+        type: "string"
+        description: "Last seen release tag for this repository"
+

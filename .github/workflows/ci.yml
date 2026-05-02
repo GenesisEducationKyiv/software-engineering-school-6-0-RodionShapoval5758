@@ -1,0 +1,38 @@
+name: CI-Pipeline
+on:
+  push:
+  pull_request:
+jobs:
+  build-test:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repo
+        uses: actions/checkout@v4
+      - name: Set up Golang
+        uses: actions/setup-go@v5
+        with:
+          go-version: "1.25"
+      - name: Vet Go
+        run: go vet ./...
+      - name: Build
+        run: go build ./...
+      - name: Test
+        run: go test ./...
+      - name: Run linter
+        uses: golangci/golangci-lint-action@v9
+        with:
+          version: v2.11
+  run-lint:
+    needs: build-test
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repo
+        uses: actions/checkout@v4
+      - name: Set up Golang
+        uses: actions/setup-go@v5
+        with:
+          go-version: "1.25"
+      - name: Run linter
+        uses: golangci/golangci-lint-action@v9
+        with:
+          version: v2.11
