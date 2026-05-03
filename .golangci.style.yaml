@@ -13,7 +13,6 @@ linters:
     - nlreturn
     - recvcheck
     - tagalign
-    - whitespace
   settings:
     dupl:
       threshold: 150
@@ -21,3 +20,9 @@ linters:
 issues:
   max-issues-per-linter: 0
   max-same-issues: 0
+
+output:
+  formats:
+    text:
+      path: stdout
+      print-linter-name: true
