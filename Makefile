@@ -10,5 +10,3 @@ lint-style-fix:
 	golangci-lint run -c .golangci.style.yaml --fix
 
 lint-all: lint-core lint-style
-
-lint: lint-core
