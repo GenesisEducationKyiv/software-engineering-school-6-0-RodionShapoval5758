@@ -11,11 +11,11 @@ type ErrorResponse struct {
 }
 
 func WriteJSONResponse(w http.ResponseWriter, statusCode int, t any) {
-
 	data, err := json.Marshal(t)
 	if err != nil {
 		log.Printf("Encoding to json has failed: %v", err)
 		http.Error(w, "Server Error", http.StatusInternalServerError)
+
 		return
 	}
 

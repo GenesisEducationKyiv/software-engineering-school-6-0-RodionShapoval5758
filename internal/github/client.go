@@ -108,7 +108,7 @@ func (s *Service) doGet(ctx context.Context, path string) (*http.Response, error
 	}
 
 	httpRequest.Header.Set("Accept", "application/vnd.github+json")
-	httpRequest.Header.Set("X-GitHub-Api-Version", githubAPIVersion)
+	httpRequest.Header.Set("X-Github-Api-Version", githubAPIVersion)
 	httpRequest.Header.Set("User-Agent", userAgent)
 	if s.githubToken != nil && *s.githubToken != "" {
 		httpRequest.Header.Set("Authorization", "Bearer "+*s.githubToken)
@@ -129,9 +129,10 @@ func determineRepsonse(resp *http.Response) error {
 	case http.StatusNotFound:
 		return ErrNotFound
 	case http.StatusForbidden, http.StatusTooManyRequests:
-		if resp.Header.Get("X-RateLimit-Remaining") == "0" || resp.Header.Get("Retry-After") != "" {
+		if resp.Header.Get("X-Ratelimit-Remaining") == "0" || resp.Header.Get("Retry-After") != "" {
 			return ErrRateLimited
 		}
+
 		return fmt.Errorf("%w: status %d", ErrUnexpectedResponse, resp.StatusCode)
 	case http.StatusMovedPermanently:
 		return fmt.Errorf("%w: status %d", ErrUnexpectedResponse, resp.StatusCode)

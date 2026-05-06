@@ -37,6 +37,7 @@ func TestGenerateToken(t *testing.T) {
 			got, err := GenerateToken(tt.length)
 			if (err != nil) != tt.wantErr {
 				t.Errorf("GenerateToken() error = %v, wantErr %v", err, tt.wantErr)
+
 				return
 			}
 			if tt.wantErr {

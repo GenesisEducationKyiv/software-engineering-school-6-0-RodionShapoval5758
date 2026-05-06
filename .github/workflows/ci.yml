@@ -1,38 +1,50 @@
 name: CI-Pipeline
 on:
   push:
+    branches:
+      - main
   pull_request:
+env:
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
 jobs:
   build-test:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout repo
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6
       - name: Set up Golang
-        uses: actions/setup-go@v5
+        uses: actions/setup-go@v6
         with:
-          go-version: "1.25"
-      - name: Vet Go
-        run: go vet ./...
+          go-version-file: go.mod
       - name: Build
         run: go build ./...
       - name: Test
         run: go test ./...
-      - name: Run linter
-        uses: golangci/golangci-lint-action@v9
-        with:
-          version: v2.11
-  run-lint:
-    needs: build-test
+  lint-core:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout repo
-        uses: actions/checkout@v4
+        uses: actions/checkout@v5
       - name: Set up Golang
-        uses: actions/setup-go@v5
+        uses: actions/setup-go@v6
         with:
-          go-version: "1.25"
-      - name: Run linter
+          go-version-file: go.mod
+      - name: Run core linter
         uses: golangci/golangci-lint-action@v9
         with:
-          version: v2.11
+          version: v2.11.4
+          args: --config=.golangci.core.yaml
+  lint-style:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repo
+        uses: actions/checkout@v5
+      - name: Set up Golang
+        uses: actions/setup-go@v6
+        with:
+          go-version-file: go.mod
+      - name: Run style linter
+        uses: golangci/golangci-lint-action@v9
+        with:
+          version: v2.11.4
+          args: --config=.golangci.style.yaml
