@@ -1,5 +1,8 @@
 # ADR-0004: Split linting into core and style configurations
 
+## Status
+Accepted
+
 ## Context
 The project uses `golangci-lint`, but not all linters have the same purpose. Some checks are high-signal correctness checks that should act as a quality gate, while others are more stylistic or readability-oriented and can create more review noise.
 

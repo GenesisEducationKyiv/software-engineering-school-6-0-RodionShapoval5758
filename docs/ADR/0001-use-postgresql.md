@@ -1,5 +1,8 @@
 # ADR-0001: Use PostgreSQL as the source of truth
 
+## Status
+Accepted
+
 ## Context
 The service needs durable storage for subscriptions, repository tracking state, and token-based lifecycle flows. It also needs schema constraints for uniqueness and reliable relational queries between subscriptions and repositories.
 

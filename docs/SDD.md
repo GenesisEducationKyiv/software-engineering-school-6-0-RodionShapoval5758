@@ -75,7 +75,8 @@ High-level runtime flow:
 ### Unsubscribe Flow
 1. Client opens `GET /api/unsubscribe/{token}`
 2. Service resolves unsubscribe token
-3. Subscription is removed or marked inactive
+3. Subscription is deleted
+4. If no subscriptions remain for that repository, the orphaned repository record is deleted
 
 ### Release Scan and Notify Flow
 1. Worker wakes up on interval
@@ -115,7 +116,7 @@ Important persistence notes:
 ### GitHub API
 - used to validate repositories during subscribe flow
 - used to fetch latest release information during scans
-- `404` is handled differently depending on the flow: repository creation rejects unknown repositories, while scanning skips repositories with no latest release
+- `404` is handled differently depending on the flow: repository creation rejects unknown repositories, while scanning skips repositories that do not currently produce latest release data
 - `429` causes the current scan pass to stop early and resume on the next interval
 - temporary network failures are logged and isolated so one repository failure does not break the whole scan
 
@@ -145,4 +146,3 @@ Current ADRs:
 - `ADR-0001: Use PostgreSQL as the source of truth`
 - `ADR-0002: Detect new releases by polling GitHub API`
 - `ADR-0003: Share repository state across subscriptions`
-- `ADR-0004: Split linting into core and style configurations`

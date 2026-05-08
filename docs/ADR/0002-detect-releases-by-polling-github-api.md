@@ -1,5 +1,8 @@
 # ADR-0002: Detect new releases by polling GitHub API
 
+## Status
+Accepted
+
 ## Context
 The system must detect new releases for tracked repositories and notify subscribers. The current product is a single service and needs a simple, controllable integration model that works without additional external event infrastructure.
 

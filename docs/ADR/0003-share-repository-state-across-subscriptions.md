@@ -1,5 +1,8 @@
 # ADR-0003: Share repository state across subscriptions
 
+## Status
+Accepted
+
 ## Context
 Many users can subscribe to the same GitHub repository. The system needs to store release tracking state such as `last_seen_tag` and avoid duplicating the same repository-level data for every subscriber.
 
