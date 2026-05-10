@@ -9,7 +9,6 @@ import (
 	"GithubReleaseNotificationAPI/internal/domain"
 	gh "GithubReleaseNotificationAPI/internal/github"
 	"GithubReleaseNotificationAPI/internal/store"
-	"GithubReleaseNotificationAPI/internal/store/repository"
 	"GithubReleaseNotificationAPI/internal/store/subscription"
 )
 
@@ -24,20 +23,35 @@ type githubClient interface {
 	CheckRepo(ctx context.Context, fullName string) error
 }
 
+type subscriptionRepository interface {
+	Create(ctx context.Context, subscription domain.Subscription) error
+	FindByUnsubscribeToken(ctx context.Context, token string) (*domain.Subscription, error)
+	Confirm(ctx context.Context, token string) error
+	DeleteByUnsubscribeToken(ctx context.Context, token string) error
+	HasAnyByRepositoryID(ctx context.Context, repositoryID int64) (bool, error)
+	ListSubscriptionDetailsByEmail(ctx context.Context, email string) ([]subscription.Details, error)
+}
+
+type repositoryRepository interface {
+	Create(ctx context.Context, repositoryName string) (*domain.Repository, error)
+	FindByFullName(ctx context.Context, fullName string) (*domain.Repository, error)
+	DeleteByID(ctx context.Context, repositoryID int64) error
+}
+
 type smtpClient interface {
 	SendConfirmationEmail(toEmail, repoName, confirmToken string) error
 }
 
 type subscriptionService struct {
-	subscriptionRepository subscription.Repository
-	repositoryRepository   repository.Repository
+	subscriptionRepository subscriptionRepository
+	repositoryRepository   repositoryRepository
 	githubClient           githubClient
 	smtpClient             smtpClient
 }
 
 func NewSubscriptionService(
-	subscriptionRepository subscription.Repository,
-	repositoryRepository repository.Repository,
+	subscriptionRepository subscriptionRepository,
+	repositoryRepository repositoryRepository,
 	githubClient githubClient,
 	smtpClient smtpClient,
 ) SubscriptionService {
@@ -53,16 +67,78 @@ const TokenLength = 32
 const maxTokenGenerationAttempts = 5
 
 func (s *subscriptionService) Subscribe(ctx context.Context, email string, repo string) error {
+	email, repo, err := normalizeSubscriptionInput(email, repo)
+	if err != nil {
+		return err
+	}
+
+	if err := s.verifyRepositoryExists(ctx, repo); err != nil {
+		return err
+	}
+
+	repoDomain, err := s.ensureRepository(ctx, repo)
+	if err != nil {
+		return err
+	}
+
+	token, err := s.createPendingSubscription(ctx, email, repoDomain.ID)
+	if err != nil {
+		return err
+	}
+
+	if err := s.sendConfirmationEmail(email, repo, token); err != nil {
+		return err
+	}
+
+	return nil
+}
+
+func (s *subscriptionService) Confirm(ctx context.Context, token string) error {
+	return s.confirmSubscription(ctx, token)
+}
+
+func (s *subscriptionService) Unsubscribe(ctx context.Context, token string) error {
+	subscriptionDomain, err := s.findSubscriptionByUnsubscribeToken(ctx, token)
+	if err != nil {
+		return err
+	}
+
+	if err := s.deleteSubscriptionByUnsubscribeToken(ctx, token); err != nil {
+		return err
+	}
+
+	return s.cleanupRepositoryIfOrphaned(ctx, subscriptionDomain.RepositoryID)
+}
+
+func (s *subscriptionService) ListByEmail(ctx context.Context, email string) ([]subscription.Details, error) {
 	email = strings.TrimSpace(email)
 	if err := validateEmailFormat(email); err != nil {
-		return err
+		return nil, err
+	}
+
+	subscriptions, err := s.subscriptionRepository.ListSubscriptionDetailsByEmail(ctx, email)
+	if err != nil {
+		return nil, fmt.Errorf("failed to list subscriptions with email %s: %w", email, err)
+	}
+
+	return subscriptions, nil
+}
+
+func normalizeSubscriptionInput(email string, repo string) (string, string, error) {
+	email = strings.TrimSpace(email)
+	if err := validateEmailFormat(email); err != nil {
+		return "", "", err
 	}
 
 	repo = strings.TrimSpace(repo)
 	if err := validateRepoFormat(repo); err != nil {
-		return err
+		return "", "", err
 	}
 
+	return email, repo, nil
+}
+
+func (s *subscriptionService) verifyRepositoryExists(ctx context.Context, repo string) error {
 	if err := s.githubClient.CheckRepo(ctx, repo); err != nil {
 		switch {
 		case errors.Is(err, gh.ErrNotFound):
@@ -76,113 +152,41 @@ func (s *subscriptionService) Subscribe(ctx context.Context, email string, repo 
 		}
 	}
 
-	// Manual race condition handling
+	return nil
+}
+
+func (s *subscriptionService) ensureRepository(ctx context.Context, repo string) (*domain.Repository, error) {
 	repoDomain, err := s.repositoryRepository.FindByFullName(ctx, repo)
-	if err != nil {
-		if errors.Is(err, store.ErrNotFound) {
-			repoDomain, err = s.repositoryRepository.Create(ctx, repo)
-			if err != nil {
-				if errors.Is(err, store.ErrAlreadyExists) {
-					repoDomain, err = s.repositoryRepository.FindByFullName(ctx, repo)
-					if err != nil {
-						return fmt.Errorf("find repository %s after create conflict: %w", repo, err)
-					}
-				} else {
-					return fmt.Errorf("create repository %s: %w", repo, err)
-				}
-			}
-		} else {
-			return fmt.Errorf("find repository %s: %w", repo, err)
-		}
+	if err == nil {
+		return repoDomain, nil
 	}
 
-	token, err := s.createSubscriptionWithGeneratedTokens(ctx, email, repoDomain.ID)
-	if err != nil {
-		switch {
-		case errors.Is(err, store.ErrAlreadyExists):
-			return ErrSubscriptionAlreadyExists
-		case errors.Is(err, store.ErrTokensAlreadyExists):
-			return fmt.Errorf("create subscription tokens conflict after retries: %w", err)
-		default:
-			return fmt.Errorf("failed to create subscription: %w", err)
-		}
+	if !errors.Is(err, store.ErrNotFound) {
+		return nil, fmt.Errorf("find repository %s: %w", repo, err)
 	}
 
-	if err := s.smtpClient.SendConfirmationEmail(email, repo, token); err != nil {
-		return fmt.Errorf("send email to %s for repo %s and with token %s: %w",
-			email, repo, token, err)
-	}
-
-	return nil
+	return s.createRepositoryWithConflictRecovery(ctx, repo)
 }
 
-func (s *subscriptionService) Confirm(ctx context.Context, token string) error {
-	if err := s.subscriptionRepository.Confirm(ctx, token); err != nil {
-		if errors.Is(err, store.ErrNotFound) {
-			return fmt.Errorf("confirm token not found: %w", ErrTokenNotFound)
-		}
-
-		return fmt.Errorf("confirm subscription with token %s: %w", token, err)
+func (s *subscriptionService) createRepositoryWithConflictRecovery(ctx context.Context, repo string) (*domain.Repository, error) {
+	repoDomain, err := s.repositoryRepository.Create(ctx, repo)
+	if err == nil {
+		return repoDomain, nil
 	}
 
-	return nil
+	if !errors.Is(err, store.ErrAlreadyExists) {
+		return nil, fmt.Errorf("create repository %s: %w", repo, err)
+	}
+
+	repoDomain, err = s.repositoryRepository.FindByFullName(ctx, repo)
+	if err != nil {
+		return nil, fmt.Errorf("find repository %s after create conflict: %w", repo, err)
+	}
+
+	return repoDomain, nil
 }
 
-func (s *subscriptionService) Unsubscribe(ctx context.Context, token string) error {
-	subscriptionDomain, err := s.subscriptionRepository.FindByUnsubscribeToken(ctx, token)
-	if err != nil {
-		if errors.Is(err, store.ErrNotFound) {
-			return fmt.Errorf("unsubscribe token not found: %w", ErrTokenNotFound)
-		}
-
-		return fmt.Errorf("find subscription with unsubscribe token %s: %w", token, err)
-	}
-
-	if err := s.subscriptionRepository.DeleteByUnsubscribeToken(ctx, token); err != nil {
-		if errors.Is(err, store.ErrNotFound) {
-			return fmt.Errorf("unsubscribe token not found: %w", ErrTokenNotFound)
-		}
-
-		return fmt.Errorf("delete subscription with token %s: %w", token, err)
-	}
-
-	hasAnySubscriptions, err := s.subscriptionRepository.HasAnyByRepositoryID(ctx, subscriptionDomain.RepositoryID)
-	if err != nil {
-		return fmt.Errorf("check remaining subscriptions for repository_id %d: %w", subscriptionDomain.RepositoryID, err)
-	}
-
-	if hasAnySubscriptions {
-		return nil
-	}
-
-	err = s.repositoryRepository.DeleteByID(ctx, subscriptionDomain.RepositoryID)
-	if err != nil {
-		if errors.Is(err, store.ErrNotFound) {
-			return fmt.Errorf("repository %d disappeared during unsubscribe cleanup: %w", subscriptionDomain.RepositoryID, err)
-		}
-
-		return fmt.Errorf("delete orphaned repository %d: %w", subscriptionDomain.RepositoryID, err)
-	}
-
-	return nil
-}
-
-func (s *subscriptionService) ListByEmail(ctx context.Context, email string) ([]subscription.Details, error) {
-	email = strings.TrimSpace(email)
-	err := validateEmailFormat(email)
-	if err != nil {
-		return nil, err
-	}
-
-	subscriptions, err := s.subscriptionRepository.ListSubscriptionDetailsByEmail(ctx, email)
-	if err != nil {
-		return nil, fmt.Errorf("failed to list subscriptions with email %s: %w", email, err)
-	}
-
-	return subscriptions, nil
-}
-
-func (s *subscriptionService) createSubscriptionWithGeneratedTokens(ctx context.Context, email string, repositoryID int64) (string, error) {
+func (s *subscriptionService) createPendingSubscription(ctx context.Context, email string, repositoryID int64) (string, error) {
 	for range maxTokenGenerationAttempts {
 		confirmToken, unsubscribeToken, err := GenerateTokens()
 		if err != nil {
@@ -201,10 +205,88 @@ func (s *subscriptionService) createSubscriptionWithGeneratedTokens(ctx context.
 			continue
 		}
 
-		return confirmToken, err
+		if err != nil {
+			switch {
+			case errors.Is(err, store.ErrAlreadyExists):
+				return "", ErrSubscriptionAlreadyExists
+			case errors.Is(err, store.ErrTokensAlreadyExists):
+				return "", fmt.Errorf("create subscription tokens conflict after retries: %w", err)
+			default:
+				return "", fmt.Errorf("failed to create subscription: %w", err)
+			}
+		}
+
+		return confirmToken, nil
 	}
 
-	return "", store.ErrTokensAlreadyExists
+	return "", fmt.Errorf("create subscription tokens conflict after retries: %w", store.ErrTokensAlreadyExists)
+}
+
+func (s *subscriptionService) sendConfirmationEmail(email string, repo string, token string) error {
+	if err := s.smtpClient.SendConfirmationEmail(email, repo, token); err != nil {
+		return fmt.Errorf("send email to %s for repo %s and with token %s: %w",
+			email, repo, token, err)
+	}
+
+	return nil
+}
+
+func (s *subscriptionService) confirmSubscription(ctx context.Context, token string) error {
+	if err := s.subscriptionRepository.Confirm(ctx, token); err != nil {
+		if errors.Is(err, store.ErrNotFound) {
+			return fmt.Errorf("confirm token not found: %w", ErrTokenNotFound)
+		}
+
+		return fmt.Errorf("confirm subscription with token %s: %w", token, err)
+	}
+
+	return nil
+}
+
+func (s *subscriptionService) findSubscriptionByUnsubscribeToken(ctx context.Context, token string) (*domain.Subscription, error) {
+	subscriptionDomain, err := s.subscriptionRepository.FindByUnsubscribeToken(ctx, token)
+	if err != nil {
+		if errors.Is(err, store.ErrNotFound) {
+			return nil, fmt.Errorf("unsubscribe token not found: %w", ErrTokenNotFound)
+		}
+
+		return nil, fmt.Errorf("find subscription with unsubscribe token %s: %w", token, err)
+	}
+
+	return subscriptionDomain, nil
+}
+
+func (s *subscriptionService) deleteSubscriptionByUnsubscribeToken(ctx context.Context, token string) error {
+	if err := s.subscriptionRepository.DeleteByUnsubscribeToken(ctx, token); err != nil {
+		if errors.Is(err, store.ErrNotFound) {
+			return fmt.Errorf("unsubscribe token not found: %w", ErrTokenNotFound)
+		}
+
+		return fmt.Errorf("delete subscription with token %s: %w", token, err)
+	}
+
+	return nil
+}
+
+func (s *subscriptionService) cleanupRepositoryIfOrphaned(ctx context.Context, repositoryID int64) error {
+	hasAnySubscriptions, err := s.subscriptionRepository.HasAnyByRepositoryID(ctx, repositoryID)
+	if err != nil {
+		return fmt.Errorf("check remaining subscriptions for repository_id %d: %w", repositoryID, err)
+	}
+
+	if hasAnySubscriptions {
+		return nil
+	}
+
+	if err := s.repositoryRepository.DeleteByID(ctx, repositoryID); err != nil {
+		if errors.Is(err, store.ErrNotFound) {
+			return fmt.Errorf("repository %d disappeared during unsubscribe cleanup: %w", repositoryID, err)
+		}
+
+		return fmt.Errorf("delete orphaned repository %d: %w", repositoryID, err)
+	}
+
+	return nil
 }
 
 func GenerateTokens() (string, string, error) {
