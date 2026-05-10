@@ -224,8 +224,7 @@ func (s *subscriptionService) createPendingSubscription(ctx context.Context, ema
 
 func (s *subscriptionService) sendConfirmationEmail(email string, repo string, token string) error {
 	if err := s.smtpClient.SendConfirmationEmail(email, repo, token); err != nil {
-		return fmt.Errorf("send email to %s for repo %s and with token %s: %w",
-			email, repo, token, err)
+		return fmt.Errorf("send confirmation email to %s for repo %s: %w", email, repo, err)
 	}
 
 	return nil
@@ -237,7 +236,7 @@ func (s *subscriptionService) confirmSubscription(ctx context.Context, token str
 			return fmt.Errorf("confirm token not found: %w", ErrTokenNotFound)
 		}
 
-		return fmt.Errorf("confirm subscription with token %s: %w", token, err)
+		return fmt.Errorf("confirm subscription: %w", err)
 	}
 
 	return nil
@@ -250,7 +249,7 @@ func (s *subscriptionService) findSubscriptionByUnsubscribeToken(ctx context.Con
 			return nil, fmt.Errorf("unsubscribe token not found: %w", ErrTokenNotFound)
 		}
 
-		return nil, fmt.Errorf("find subscription with unsubscribe token %s: %w", token, err)
+		return nil, fmt.Errorf("find subscription by unsubscribe token: %w", err)
 	}
 
 	return subscriptionDomain, nil
@@ -262,7 +261,7 @@ func (s *subscriptionService) deleteSubscriptionByUnsubscribeToken(ctx context.C
 			return fmt.Errorf("unsubscribe token not found: %w", ErrTokenNotFound)
 		}
 
-		return fmt.Errorf("delete subscription with token %s: %w", token, err)
+		return fmt.Errorf("delete subscription by unsubscribe token: %w", err)
 	}
 
 	return nil
