@@ -166,6 +166,7 @@ func (w *Worker) processRepository(ctx context.Context, repo domain.Repository) 
 
 	if !w.hasNewRelease(repo, release) {
 		w.logUnchangedRelease(repo, release)
+
 		return nil
 	}
 
@@ -183,8 +184,10 @@ func (w *Worker) getLatestRelease(ctx context.Context, repo domain.Repository) (
 	if err != nil {
 		if errors.Is(err, github.ErrNotFound) {
 			w.logRepositoryWithoutLatestRelease(repo)
+
 			return nil, nil
 		}
+
 		return nil, err
 	}
 

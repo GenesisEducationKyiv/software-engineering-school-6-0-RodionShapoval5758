@@ -33,6 +33,7 @@ func (h *Handler) Subscribe(w http.ResponseWriter, r *http.Request) {
 
 	if err := requireNonEmptySubscriptionFields(req.Email, req.Repo); err != nil {
 		util.WriteErrorResponse(w, http.StatusBadRequest, err.Error())
+
 		return
 	}
 
@@ -52,6 +53,7 @@ func (h *Handler) Confirm(w http.ResponseWriter, r *http.Request) {
 
 	if err := requireToken(token, 1); err != nil {
 		util.WriteErrorResponse(w, http.StatusBadRequest, err.Error())
+
 		return
 	}
 
@@ -71,6 +73,7 @@ func (h *Handler) Unsubscribe(w http.ResponseWriter, r *http.Request) {
 
 	if err := requireToken(token, 8); err != nil {
 		util.WriteErrorResponse(w, http.StatusBadRequest, err.Error())
+
 		return
 	}
 
@@ -90,6 +93,7 @@ func (h *Handler) ListSubscriptions(w http.ResponseWriter, r *http.Request) {
 
 	if err := requireNonEmptyEmail(email); err != nil {
 		util.WriteErrorResponse(w, http.StatusBadRequest, err.Error())
+
 		return
 	}
 
@@ -135,7 +139,7 @@ func requireNonEmptySubscriptionFields(email string, repo string) error {
 
 func requireToken(token string, minLen int) error {
 	if len(token) < minLen {
-		return errors.New("Invalid token")
+		return errors.New("invalid token")
 	}
 
 	return nil
