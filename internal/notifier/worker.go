@@ -29,11 +29,12 @@ type repositoryRepository interface {
 }
 
 type Worker struct {
-	smtpClient             smtpClient
-	githubClient           githubClient
-	subscriptionRepository subscriptionRepository
-	repositoryRepository   repositoryRepository
+	githubClient         githubClient
+	repositoryRepository repositoryRepository
+	releaseNotifier      *releaseNotifier
 }
+
+const maxConcurrentRepositoryScans = 10
 
 func NewWorker(
 	smtpClient smtpClient,
@@ -42,10 +43,9 @@ func NewWorker(
 	repositoryRepository repositoryRepository,
 ) *Worker {
 	return &Worker{
-		smtpClient:             smtpClient,
-		githubClient:           githubClient,
-		subscriptionRepository: subscriptionRepository,
-		repositoryRepository:   repositoryRepository,
+		githubClient:         githubClient,
+		repositoryRepository: repositoryRepository,
+		releaseNotifier:      newReleaseNotifier(smtpClient, subscriptionRepository),
 	}
 }
 
@@ -84,14 +84,34 @@ func (w *Worker) runOneScan(ctx context.Context) error {
 	scanCtx, cancelScan := context.WithCancel(ctx)
 	defer cancelScan()
 
-	repositories, err := w.repositoryRepository.ListTracked(scanCtx)
+	repositories, err := w.listTrackedRepositories(scanCtx)
 	if err != nil {
 		return err
 	}
 
 	slog.Info("worker loaded tracked repositories", "count", len(repositories))
 
-	sem := make(chan struct{}, 10)
+	if err := w.processRepositories(scanCtx, cancelScan, repositories); err != nil {
+		return err
+	}
+
+	if ctx.Err() == nil && scanCtx.Err() != nil {
+		return github.ErrRateLimited
+	}
+
+	return nil
+}
+
+func (w *Worker) listTrackedRepositories(ctx context.Context) ([]domain.Repository, error) {
+	return w.repositoryRepository.ListTracked(ctx)
+}
+
+func (w *Worker) processRepositories(
+	scanCtx context.Context,
+	cancelScan context.CancelFunc,
+	repositories []domain.Repository,
+) error {
+	sem := make(chan struct{}, maxConcurrentRepositoryScans)
 	var waitGroup sync.WaitGroup
 	for _, repo := range repositories {
 		if scanCtx.Err() != nil {
@@ -103,66 +123,109 @@ func (w *Worker) runOneScan(ctx context.Context) error {
 			defer waitGroup.Done()
 			defer func() { <-sem }()
 			if err := w.processRepository(scanCtx, r); err != nil {
-				if errors.Is(err, github.ErrRateLimited) {
-					cancelScan()
-
-					return
-				}
-				slog.Error(
-					"worker repository processing failed",
-					"repository_id",
-					r.ID,
-					"repository",
-					r.FullName,
-					"error",
-					err,
-				)
-
-				return
+				w.handleRepositoryProcessingError(err, r, cancelScan)
 			}
 		}(repo)
 	}
 	waitGroup.Wait()
 
-	if ctx.Err() == nil && scanCtx.Err() != nil {
-		return github.ErrRateLimited
-	}
-
 	return nil
 }
 
+func (w *Worker) handleRepositoryProcessingError(
+	err error,
+	repo domain.Repository,
+	cancelScan context.CancelFunc,
+) {
+	if errors.Is(err, github.ErrRateLimited) {
+		cancelScan()
+
+		return
+	}
+
+	slog.Error(
+		"worker repository processing failed",
+		"repository_id",
+		repo.ID,
+		"repository",
+		repo.FullName,
+		"error",
+		err,
+	)
+}
+
 func (w *Worker) processRepository(ctx context.Context, repo domain.Repository) error {
-	release, err := w.githubClient.GetLatestTag(ctx, repo.FullName)
+	release, err := w.getLatestRelease(ctx, repo)
 	if err != nil {
-		if errors.Is(err, github.ErrNotFound) {
-			slog.Info(
-				"worker skipped repository without latest release",
-				"repository_id",
-				repo.ID,
-				"repository",
-				repo.FullName,
-			)
-
-			return nil
-		}
-
 		return err
 	}
 
-	if repo.LastSeenTag != nil && release.Tag == *repo.LastSeenTag {
-		slog.Info(
-			"worker skipped repository with unchanged release tag",
-			"repository_id",
-			repo.ID,
-			"repository",
-			repo.FullName,
-			"tag",
-			release.Tag,
-		)
-
+	if release == nil {
 		return nil
 	}
 
+	if !w.hasNewRelease(repo, release) {
+		w.logUnchangedRelease(repo, release)
+		return nil
+	}
+
+	w.logDetectedNewRelease(repo, release)
+
+	if err := w.markReleaseSeen(ctx, repo.ID, release.Tag); err != nil {
+		return err
+	}
+
+	return w.notifyConfirmedSubscribers(ctx, repo, release)
+}
+
+func (w *Worker) getLatestRelease(ctx context.Context, repo domain.Repository) (*github.Release, error) {
+	release, err := w.githubClient.GetLatestTag(ctx, repo.FullName)
+	if err != nil {
+		if errors.Is(err, github.ErrNotFound) {
+			w.logRepositoryWithoutLatestRelease(repo)
+			return nil, nil
+		}
+		return nil, err
+	}
+
+	return release, nil
+}
+
+func (w *Worker) hasNewRelease(repo domain.Repository, release *github.Release) bool {
+	return repo.LastSeenTag == nil || release.Tag != *repo.LastSeenTag
+}
+
+func (w *Worker) markReleaseSeen(ctx context.Context, repositoryID int64, tag string) error {
+	return w.repositoryRepository.UpdateLastSeenTag(ctx, repositoryID, tag)
+}
+
+func (w *Worker) notifyConfirmedSubscribers(ctx context.Context, repo domain.Repository, release *github.Release) error {
+	return w.releaseNotifier.notifyConfirmedSubscribers(ctx, repo, release)
+}
+
+func (w *Worker) logRepositoryWithoutLatestRelease(repo domain.Repository) {
+	slog.Info(
+		"worker skipped repository without latest release",
+		"repository_id",
+		repo.ID,
+		"repository",
+		repo.FullName,
+	)
+}
+
+func (w *Worker) logUnchangedRelease(repo domain.Repository, release *github.Release) {
+	slog.Info(
+		"worker skipped repository with unchanged release tag",
+		"repository_id",
+		repo.ID,
+		"repository",
+		repo.FullName,
+		"tag",
+		release.Tag,
+	)
+}
+
+func (w *Worker) logDetectedNewRelease(repo domain.Repository, release *github.Release) {
 	slog.Info(
 		"worker detected new release",
 		"repository_id",
@@ -172,56 +235,4 @@ func (w *Worker) processRepository(ctx context.Context, repo domain.Repository) 
 		"tag",
 		release.Tag,
 	)
-
-	if err := w.repositoryRepository.UpdateLastSeenTag(ctx, repo.ID, release.Tag); err != nil {
-		return err
-	}
-
-	subscriptions, err := w.subscriptionRepository.ListConfirmedByRepositoryID(ctx, repo.ID)
-	if err != nil {
-		return err
-	}
-
-	slog.Info(
-		"worker loaded confirmed subscriptions",
-		"repository_id",
-		repo.ID,
-		"repository",
-		repo.FullName,
-		"count",
-		len(subscriptions),
-	)
-
-	for _, subscription := range subscriptions {
-		err := w.smtpClient.SendReleaseNotification(subscription.Email, subscription.UnsubscribeToken, release)
-		if err != nil {
-			slog.Error(
-				"worker notification send failed",
-				"repository_id",
-				repo.ID,
-				"repository",
-				repo.FullName,
-				"email",
-				subscription.Email,
-				"error",
-				err,
-			)
-
-			continue
-		}
-
-		slog.Info(
-			"worker notification sent",
-			"repository_id",
-			repo.ID,
-			"repository",
-			repo.FullName,
-			"email",
-			subscription.Email,
-			"tag",
-			release.Tag,
-		)
-	}
-
-	return nil
 }
