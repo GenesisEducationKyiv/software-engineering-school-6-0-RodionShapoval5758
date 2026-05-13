@@ -1,5 +1,8 @@
 # ADR-0003: Share repository state across subscriptions
 
+## Author
+Rodion Shapoval
+
 ## Status
 Accepted
 

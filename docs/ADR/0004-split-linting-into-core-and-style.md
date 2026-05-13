@@ -1,5 +1,8 @@
 # ADR-0004: Split linting into core and style configurations
 
+## Author
+Rodion Shapoval
+
 ## Status
 Accepted
 

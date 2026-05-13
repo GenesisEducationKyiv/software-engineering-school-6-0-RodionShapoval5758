@@ -1,5 +1,8 @@
 # ADR-0002: Detect new releases by polling GitHub API
 
+## Author
+Rodion Shapoval
+
 ## Status
 Accepted
 
