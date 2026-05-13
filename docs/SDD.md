@@ -98,18 +98,42 @@ sequenceDiagram
 6. Service stores a pending subscription with confirmation token
 7. Mail service sends confirmation email
 
-### Confirm Flow
-1. Client opens `GET /api/confirm/{token}`
-2. Service resolves the token
-3. Subscription becomes active
-
 ### Unsubscribe Flow
+```mermaid
+sequenceDiagram
+    actor User
+    participant API
+    participant DB
+
+    User->>API: Unsubscribe token
+    API->>DB: Find subscription
+    API->>DB: Delete subscription
+    opt No remaining subscriptions
+        API->>DB: Delete repository
+    end
+```
+
 1. Client opens `GET /api/unsubscribe/{token}`
 2. Service resolves unsubscribe token
 3. Subscription is deleted
 4. If no subscriptions remain for that repository, the orphaned repository record is deleted
 
 ### Release Scan and Notify Flow
+```mermaid
+sequenceDiagram
+    participant Worker
+    participant DB
+    participant GitHub
+    participant SMTP
+
+    Worker->>DB: Load repositories
+    Worker->>GitHub: Fetch latest release
+    Worker->>DB: Compare last_seen_tag
+    Worker->>DB: Update last_seen_tag
+    Worker->>DB: Load subscribers
+    Worker->>SMTP: Send notifications
+```
+
 1. Worker wakes up on interval
 2. Worker loads tracked repositories from the database
 3. Worker processes repositories concurrently with bounded parallelism
