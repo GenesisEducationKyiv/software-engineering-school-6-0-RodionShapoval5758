@@ -1,4 +1,4 @@
-# ADR-0002: Detect new releases by polling GitHub API
+# ADR-0002: Poll GitHub API to detect new releases
 
 ## Author
 Rodion Shapoval
@@ -7,7 +7,11 @@ Rodion Shapoval
 Accepted
 
 ## Context
-The system must detect new releases for tracked repositories and notify subscribers. The current product is a single service and needs a simple, controllable integration model that works without additional external event infrastructure.
+The system must detect new releases for tracked repositories and notify subscribers. Users can subscribe to arbitrary GitHub repositories, not only repositories owned by this service operator.
+
+GitHub webhooks normally require repository admin permissions or an installed GitHub App with access to the repository. The service cannot assume it has those permissions for every repository that users want to track.
+
+The current product is a single service and needs a simple, controllable integration model that works without additional external event infrastructure.
 
 ## Decision
 Detect new releases by periodically polling the GitHub REST API from a background worker inside the monolith.
@@ -29,7 +33,7 @@ Detect new releases by periodically polling the GitHub REST API from a backgroun
 
 ## Alternatives Considered
 ### GitHub webhooks
-Rejected for now because they require additional inbound integration, delivery verification, and more operational complexity than the current project needs.
+Rejected because the service usually cannot configure webhooks for repositories it does not own or administer. Webhooks would also require additional inbound integration, delivery verification, and more operational complexity than the current project needs.
 
 ### Manual refresh or user-triggered checks
 Rejected because the product requirement is automatic release notification.
