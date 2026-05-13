@@ -1,9 +1,10 @@
 package router
 
 import (
+	"net/http"
+
 	"GithubReleaseNotificationAPI/internal/http/handler"
 	"GithubReleaseNotificationAPI/internal/http/middlewaref"
-	"net/http"
 
 	"github.com/go-chi/chi/v5"
 	"github.com/go-chi/chi/v5/middleware"
@@ -21,7 +22,7 @@ func New(handler *handler.Handler, apiKey string) http.Handler {
 			r.Post("/subscribe", handler.Subscribe)
 			r.Get("/subscriptions", handler.ListSubscriptions)
 		})
-	} else  {
+	} else {
 		router.Get("/api/subscriptions", handler.ListSubscriptions)
 		router.Post("/api/subscribe", handler.Subscribe)
 	}

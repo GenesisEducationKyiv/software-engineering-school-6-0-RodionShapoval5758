@@ -35,7 +35,7 @@ func Load() (*Config, error) {
 		SMTPPass:    os.Getenv("SMTP_PASSWORD"),
 		FromEmail:   os.Getenv("SENDER_EMAIL"),
 		AppBaseURL:  os.Getenv("MAIN_URL"),
-		ApiKey: 	 os.Getenv("API_KEY"),
+		ApiKey:      os.Getenv("API_KEY"),
 	}
 
 	if cfg.DatabaseURL == "" {

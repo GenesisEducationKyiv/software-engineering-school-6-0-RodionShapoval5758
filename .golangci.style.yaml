@@ -17,6 +17,15 @@ linters:
     dupl:
       threshold: 150
 
+formatters:
+  enable:
+    - gofmt
+    - goimports
+  settings:
+    goimports:
+      local-prefixes:
+        - GithubReleaseNotificationAPI
+
 issues:
   max-issues-per-linter: 0
   max-same-issues: 0

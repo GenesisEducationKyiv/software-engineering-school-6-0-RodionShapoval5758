@@ -1,13 +1,14 @@
 package notifier
 
 import (
-	"GithubReleaseNotificationAPI/internal/domain"
-	"GithubReleaseNotificationAPI/internal/github"
 	"context"
 	"errors"
 	"log/slog"
 	"sync"
 	"time"
+
+	"GithubReleaseNotificationAPI/internal/domain"
+	"GithubReleaseNotificationAPI/internal/github"
 )
 
 type smtpClient interface {

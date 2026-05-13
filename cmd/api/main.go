@@ -1,6 +1,15 @@
 package main
 
 import (
+	"context"
+	"errors"
+	"log/slog"
+	"net/http"
+	"os"
+	"os/signal"
+	"syscall"
+	"time"
+
 	"GithubReleaseNotificationAPI/internal/config"
 	"GithubReleaseNotificationAPI/internal/db"
 	"GithubReleaseNotificationAPI/internal/github"
@@ -11,14 +20,6 @@ import (
 	"GithubReleaseNotificationAPI/internal/service"
 	"GithubReleaseNotificationAPI/internal/store/repository"
 	"GithubReleaseNotificationAPI/internal/store/subscription"
-	"context"
-	"errors"
-	"log/slog"
-	"net/http"
-	"os"
-	"os/signal"
-	"syscall"
-	"time"
 )
 
 func main() {

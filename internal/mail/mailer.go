@@ -1,9 +1,10 @@
 package mail
 
 import (
-	"GithubReleaseNotificationAPI/internal/github"
 	"fmt"
 	"net/smtp"
+
+	"GithubReleaseNotificationAPI/internal/github"
 )
 
 type smtpService struct {
