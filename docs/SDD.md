@@ -42,6 +42,21 @@ The system consists of four main runtime parts:
 - GitHub REST API for repository validation and release checks
 - SMTP server for confirmation and notification emails
 
+```mermaid
+flowchart LR
+    Client[Client] -->|HTTP| App[API App]
+
+    App -->|SQL| DB[(PostgreSQL)]
+    App -->|REST| GitHub[GitHub API]
+    App -->|Email| Mail[SMTP]
+
+    Worker[Release Scanner] -->|REST| GitHub
+    Worker -->|SQL| DB
+    Worker -->|Email| Mail
+
+    App -. in-process .- Worker
+```
+
 High-level runtime flow:
 1. Client sends an HTTP request to the API
 2. Router applies middleware and forwards the request to the service layer
