@@ -73,7 +73,23 @@ High-level runtime flow:
 - Background worker: scans repositories, detects new releases through shared repository state, and triggers notifications for confirmed subscriptions
 
 ## 6. Key Workflows
-### Subscribe Flow
+### Subscribe and Confirm Flow
+```mermaid
+sequenceDiagram
+    actor User
+    participant API
+    participant GitHub
+    participant DB
+    participant SMTP
+
+    User->>API: Subscribe
+    API->>GitHub: Validate repository
+    API->>DB: Store pending subscription
+    API->>SMTP: Send confirmation email
+    User->>API: Confirm token
+    API->>DB: Activate subscription
+```
+
 1. Client sends `POST /api/subscribe`
 2. Router enforces API-key middleware if API-key auth is configured
 3. API validates input and repository format
