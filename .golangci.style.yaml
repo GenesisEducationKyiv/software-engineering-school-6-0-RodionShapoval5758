@@ -10,12 +10,15 @@ linters:
   enable:
     - canonicalheader
     - dupl
+    - gocognit
     - nlreturn
     - recvcheck
     - tagalign
   settings:
     dupl:
       threshold: 150
+    gocognit:
+      min-complexity: 30
 
 formatters:
   enable:
