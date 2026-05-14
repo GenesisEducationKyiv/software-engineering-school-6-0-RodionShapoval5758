@@ -1,15 +1,16 @@
 package service
 
 import (
+	"context"
+	"errors"
+	"fmt"
+	"strings"
+
 	"GithubReleaseNotificationAPI/internal/domain"
 	gh "GithubReleaseNotificationAPI/internal/github"
 	"GithubReleaseNotificationAPI/internal/store"
 	"GithubReleaseNotificationAPI/internal/store/repository"
 	"GithubReleaseNotificationAPI/internal/store/subscription"
-	"context"
-	"errors"
-	"fmt"
-	"strings"
 )
 
 type SubscriptionService interface {

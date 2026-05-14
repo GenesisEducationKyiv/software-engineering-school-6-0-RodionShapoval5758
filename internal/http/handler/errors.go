@@ -1,11 +1,12 @@
 package handler
 
 import (
-	"GithubReleaseNotificationAPI/internal/http/util"
-	"GithubReleaseNotificationAPI/internal/service"
 	"errors"
 	"log/slog"
 	"net/http"
+
+	"GithubReleaseNotificationAPI/internal/http/util"
+	"GithubReleaseNotificationAPI/internal/service"
 )
 
 func handleError(w http.ResponseWriter, err error) {

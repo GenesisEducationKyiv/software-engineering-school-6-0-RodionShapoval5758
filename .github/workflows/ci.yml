@@ -20,7 +20,7 @@ jobs:
         run: go build ./...
       - name: Test
         run: go test ./...
-  lint-core:
+  lint:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout repo
@@ -29,22 +29,8 @@ jobs:
         uses: actions/setup-go@v6
         with:
           go-version-file: go.mod
-      - name: Run core linter
+      - name: Run linter
         uses: golangci/golangci-lint-action@v9
         with:
           version: v2.11.4
-          args: --config=.golangci.core.yaml
-  lint-style:
-    runs-on: ubuntu-latest
-    steps:
-      - name: Checkout repo
-        uses: actions/checkout@v5
-      - name: Set up Golang
-        uses: actions/setup-go@v6
-        with:
-          go-version-file: go.mod
-      - name: Run style linter
-        uses: golangci/golangci-lint-action@v9
-        with:
-          version: v2.11.4
-          args: --config=.golangci.style.yaml
+          args: --config=.golangci.yaml

@@ -1,11 +1,12 @@
 package subscription
 
 import (
-	"GithubReleaseNotificationAPI/internal/domain"
-	"GithubReleaseNotificationAPI/internal/store"
 	"context"
 	"errors"
 	"fmt"
+
+	"GithubReleaseNotificationAPI/internal/domain"
+	"GithubReleaseNotificationAPI/internal/store"
 
 	"github.com/jackc/pgerrcode"
 	"github.com/jackc/pgx/v5"

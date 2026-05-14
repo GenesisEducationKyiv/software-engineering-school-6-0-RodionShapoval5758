@@ -1,12 +1,13 @@
 package handler
 
 import (
-	"GithubReleaseNotificationAPI/internal/http/models"
-	"GithubReleaseNotificationAPI/internal/http/util"
-	"GithubReleaseNotificationAPI/internal/service"
 	"encoding/json"
 	"net/http"
 	"strings"
+
+	"GithubReleaseNotificationAPI/internal/http/models"
+	"GithubReleaseNotificationAPI/internal/http/util"
+	"GithubReleaseNotificationAPI/internal/service"
 
 	"github.com/go-chi/chi/v5"
 )
