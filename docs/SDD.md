@@ -211,4 +211,3 @@ Current ADRs:
 - `ADR-0001: Use pgx for PostgreSQL access`
 - `ADR-0002: Poll GitHub API to detect new releases`
 - `ADR-0003: Model repositories separately from subscriptions`
-- `ADR-0004: Split linting into core and style configurations`
