@@ -1,0 +1,54 @@
+services:
+  app:
+    build: .
+    container_name: github-release-notification-api
+    depends_on:
+      postgres_db:
+        condition: service_healthy
+      mailpit:
+        condition: service_started
+    ports:
+      - "2433:8080"
+    environment:
+      PORT: "8080"
+      DATABASE_URL: postgres://postgres:password@postgres_db:5432/github_release_notifications?sslmode=disable
+      GITHUB_TOKEN: ${GITHUB_TOKEN}
+      API_KEY: ${API_KEY}
+      SMTP_HOST: mailpit
+      SMTP_PORT: "1025"
+      SMTP_USER: ""
+      SMTP_PASSWORD: ""
+      SENDER_EMAIL: noreply@localhost
+      MAIN_URL: http://localhost:2433
+
+  postgres_db:
+    image: postgres:16
+    container_name: github-release-notification-postgres
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: password
+      POSTGRES_DB: github_release_notifications
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres -d github_release_notifications"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  mailpit:
+    image: axllent/mailpit
+    container_name: github-release-notification-mailpit
+    restart: unless-stopped
+    ports:
+      - "8025:8025"
+      - "1025:1025"
+    environment:
+      MP_MAX_MESSAGES: 5000
+      MP_SMTP_AUTH_ACCEPT_ANY: 1
+      MP_SMTP_AUTH_ALLOW_INSECURE: 1
+
+volumes:
+  postgres_data:

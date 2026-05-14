@@ -1,0 +1,45 @@
+version: "2"
+
+run:
+  timeout: 2m
+  tests: true
+  relative-path-mode: gomod
+
+linters:
+  default: none
+  enable:
+    # Correctness
+    - govet
+    - errcheck
+    - ineffassign
+    - unused
+    - staticcheck
+    - sqlclosecheck
+
+    # Style and maintainability
+    - canonicalheader
+    - dupl
+    - gocognit
+    - nlreturn
+    - recvcheck
+    - tagalign
+  settings:
+    errcheck:
+      verbose: true
+    dupl:
+      threshold: 150
+    gocognit:
+      min-complexity: 30
+
+formatters:
+  enable:
+    - gofmt
+    - goimports
+  settings:
+    goimports:
+      local-prefixes:
+        - GithubReleaseNotificationAPI
+
+issues:
+  max-issues-per-linter: 0
+  max-same-issues: 0
