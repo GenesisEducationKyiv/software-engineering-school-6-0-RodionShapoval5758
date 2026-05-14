@@ -8,6 +8,15 @@ run:
 linters:
   default: none
   enable:
+    # Correctness
+    - govet
+    - errcheck
+    - ineffassign
+    - unused
+    - staticcheck
+    - sqlclosecheck
+
+    # Style and maintainability
     - canonicalheader
     - dupl
     - gocognit
@@ -15,6 +24,8 @@ linters:
     - recvcheck
     - tagalign
   settings:
+    errcheck:
+      verbose: true
     dupl:
       threshold: 150
     gocognit:

@@ -1,12 +1,15 @@
-.PHONY: lint lint-core lint-style lint-all lint-style-fix
+.PHONY: lint lint-fix lint-all format format-check
 
-lint-core:
-	golangci-lint run -c .golangci.core.yaml
+lint:
+	golangci-lint run -c .golangci.yaml
 
-lint-style:
-	golangci-lint run -c .golangci.style.yaml
+lint-fix:
+	golangci-lint run -c .golangci.yaml --fix
 
-lint-style-fix:
-	golangci-lint run -c .golangci.style.yaml --fix
+format:
+	golangci-lint fmt -c .golangci.yaml
 
-lint-all: lint-core lint-style
+format-check:
+	golangci-lint fmt -c .golangci.yaml --diff
+
+lint-all: lint
