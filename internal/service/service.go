@@ -116,7 +116,7 @@ func (s *subscriptionService) ListByEmail(ctx context.Context, email string) ([]
 
 	subscriptions, err := s.subscriptionRepository.ListSubscriptionDetailsByEmail(ctx, email)
 	if err != nil {
-		return nil, fmt.Errorf("failed to list subscriptions with email %s: %w", email, err)
+		return nil, fmt.Errorf("failed to list subscriptions by email: %w", err)
 	}
 
 	return subscriptions, nil
@@ -215,7 +215,7 @@ func (s *subscriptionService) createPendingSubscription(ctx context.Context, ema
 
 func (s *subscriptionService) sendConfirmationEmail(email string, repo string, token string) error {
 	if err := s.smtpClient.SendConfirmationEmail(email, repo, token); err != nil {
-		return fmt.Errorf("send confirmation email to %s for repo %s: %w", email, repo, err)
+		return fmt.Errorf("send confirmation email for repo %s: %w", repo, err)
 	}
 
 	return nil

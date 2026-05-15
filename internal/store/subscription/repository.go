@@ -58,12 +58,7 @@ func (r *PostgresSubscriptionRepository) Create(ctx context.Context, subscriptio
 			}
 		}
 
-		return fmt.Errorf(
-			"insert subscription for email %s and repository_id %d: %w",
-			subscription.Email,
-			subscription.RepositoryID,
-			err,
-		)
+		return fmt.Errorf("insert subscription for repository_id %d: %w", subscription.RepositoryID, err)
 	}
 
 	if rowsAffected := tag.RowsAffected(); rowsAffected != 1 {
@@ -167,7 +162,7 @@ func (r *PostgresSubscriptionRepository) ListConfirmedByRepositoryID(
 func (r *PostgresSubscriptionRepository) ListSubscriptionDetailsByEmail(ctx context.Context, email string) ([]domain.SubscriptionDetails, error) {
 	rows, err := r.pool.Query(ctx, listSubscriptionDetailsByEmailQuery, email)
 	if err != nil {
-		return nil, fmt.Errorf("query subscriptions details by email %s: %w", email, err)
+		return nil, fmt.Errorf("query subscription details by email: %w", err)
 	}
 	defer rows.Close()
 

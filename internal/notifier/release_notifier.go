@@ -2,30 +2,37 @@ package notifier
 
 import (
 	"GithubReleaseNotificationAPI/internal/domain"
-	"GithubReleaseNotificationAPI/internal/github"
 	"context"
 	"log/slog"
 )
 
-type releaseNotifier struct {
+type smtpClient interface {
+	SendReleaseNotification(toEmail string, unsubscribeToken string, release *domain.Release) error
+}
+
+type subscriptionRepository interface {
+	ListConfirmedByRepositoryID(ctx context.Context, repositoryID int64) ([]domain.Subscription, error)
+}
+
+type ReleaseNotifier struct {
 	smtpClient             smtpClient
 	subscriptionRepository subscriptionRepository
 }
 
-func newReleaseNotifier(
+func NewReleaseNotifier(
 	smtpClient smtpClient,
 	subscriptionRepository subscriptionRepository,
-) *releaseNotifier {
-	return &releaseNotifier{
+) *ReleaseNotifier {
+	return &ReleaseNotifier{
 		smtpClient:             smtpClient,
 		subscriptionRepository: subscriptionRepository,
 	}
 }
 
-func (n *releaseNotifier) notifyConfirmedSubscribers(
+func (n *ReleaseNotifier) NotifyConfirmedSubscribers(
 	ctx context.Context,
 	repo domain.Repository,
-	release *github.Release,
+	release *domain.Release,
 ) error {
 	subscriptions, err := n.subscriptionRepository.ListConfirmedByRepositoryID(ctx, repo.ID)
 	if err != nil {
@@ -49,10 +56,10 @@ func (n *releaseNotifier) notifyConfirmedSubscribers(
 	return nil
 }
 
-func (n *releaseNotifier) sendReleaseNotification(
+func (n *ReleaseNotifier) sendReleaseNotification(
 	repo domain.Repository,
 	subscription domain.Subscription,
-	release *github.Release,
+	release *domain.Release,
 ) {
 	err := n.smtpClient.SendReleaseNotification(subscription.Email, subscription.UnsubscribeToken, release)
 	if err != nil {
@@ -62,8 +69,8 @@ func (n *releaseNotifier) sendReleaseNotification(
 			repo.ID,
 			"repository",
 			repo.FullName,
-			"email",
-			subscription.Email,
+			"subscription_id",
+			subscription.ID,
 			"error",
 			err,
 		)
@@ -77,8 +84,8 @@ func (n *releaseNotifier) sendReleaseNotification(
 		repo.ID,
 		"repository",
 		repo.FullName,
-		"email",
-		subscription.Email,
+		"subscription_id",
+		subscription.ID,
 		"tag",
 		release.Tag,
 	)

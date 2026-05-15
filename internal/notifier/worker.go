@@ -11,16 +11,8 @@ import (
 	"GithubReleaseNotificationAPI/internal/github"
 )
 
-type smtpClient interface {
-	SendReleaseNotification(toEmail string, unsubscribeToken string, release *github.Release) error
-}
-
 type githubClient interface {
-	GetLatestTag(ctx context.Context, fullName string) (*github.Release, error)
-}
-
-type subscriptionRepository interface {
-	ListConfirmedByRepositoryID(ctx context.Context, repositoryID int64) ([]domain.Subscription, error)
+	GetLatestTag(ctx context.Context, fullName string) (*domain.Release, error)
 }
 
 type repositoryRepository interface {
@@ -28,24 +20,27 @@ type repositoryRepository interface {
 	UpdateLastSeenTag(ctx context.Context, repositoryID int64, tag string) error
 }
 
+type releaseNotifier interface {
+	NotifyConfirmedSubscribers(ctx context.Context, repo domain.Repository, release *domain.Release) error
+}
+
 type Worker struct {
 	githubClient         githubClient
 	repositoryRepository repositoryRepository
-	releaseNotifier      *releaseNotifier
+	releaseNotifier      releaseNotifier
 }
 
 const maxConcurrentRepositoryScans = 10
 
 func NewWorker(
-	smtpClient smtpClient,
 	githubClient githubClient,
-	subscriptionRepository subscriptionRepository,
 	repositoryRepository repositoryRepository,
+	releaseNotifier releaseNotifier,
 ) *Worker {
 	return &Worker{
 		githubClient:         githubClient,
 		repositoryRepository: repositoryRepository,
-		releaseNotifier:      newReleaseNotifier(smtpClient, subscriptionRepository),
+		releaseNotifier:      releaseNotifier,
 	}
 }
 
@@ -179,7 +174,7 @@ func (w *Worker) processRepository(ctx context.Context, repo domain.Repository) 
 	return w.notifyConfirmedSubscribers(ctx, repo, release)
 }
 
-func (w *Worker) getLatestRelease(ctx context.Context, repo domain.Repository) (*github.Release, error) {
+func (w *Worker) getLatestRelease(ctx context.Context, repo domain.Repository) (*domain.Release, error) {
 	release, err := w.githubClient.GetLatestTag(ctx, repo.FullName)
 	if err != nil {
 		if errors.Is(err, github.ErrNotFound) {
@@ -198,8 +193,8 @@ func (w *Worker) markReleaseSeen(ctx context.Context, repositoryID int64, tag st
 	return w.repositoryRepository.UpdateLastSeenTag(ctx, repositoryID, tag)
 }
 
-func (w *Worker) notifyConfirmedSubscribers(ctx context.Context, repo domain.Repository, release *github.Release) error {
-	return w.releaseNotifier.notifyConfirmedSubscribers(ctx, repo, release)
+func (w *Worker) notifyConfirmedSubscribers(ctx context.Context, repo domain.Repository, release *domain.Release) error {
+	return w.releaseNotifier.NotifyConfirmedSubscribers(ctx, repo, release)
 }
 
 func (w *Worker) logRepositoryWithoutLatestRelease(repo domain.Repository) {
@@ -212,7 +207,7 @@ func (w *Worker) logRepositoryWithoutLatestRelease(repo domain.Repository) {
 	)
 }
 
-func (w *Worker) logUnchangedRelease(repo domain.Repository, release *github.Release) {
+func (w *Worker) logUnchangedRelease(repo domain.Repository, release *domain.Release) {
 	slog.Info(
 		"worker skipped repository with unchanged release tag",
 		"repository_id",
@@ -224,7 +219,7 @@ func (w *Worker) logUnchangedRelease(repo domain.Repository, release *github.Rel
 	)
 }
 
-func (w *Worker) logDetectedNewRelease(repo domain.Repository, release *github.Release) {
+func (w *Worker) logDetectedNewRelease(repo domain.Repository, release *domain.Release) {
 	slog.Info(
 		"worker detected new release",
 		"repository_id",
