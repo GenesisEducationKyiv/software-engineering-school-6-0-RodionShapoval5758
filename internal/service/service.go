@@ -9,14 +9,13 @@ import (
 	"GithubReleaseNotificationAPI/internal/domain"
 	gh "GithubReleaseNotificationAPI/internal/github"
 	"GithubReleaseNotificationAPI/internal/store"
-	"GithubReleaseNotificationAPI/internal/store/subscription"
 )
 
 type SubscriptionService interface {
 	Subscribe(ctx context.Context, email string, repo string) error
 	Confirm(ctx context.Context, token string) error
 	Unsubscribe(ctx context.Context, token string) error
-	ListByEmail(ctx context.Context, email string) ([]subscription.Details, error)
+	ListByEmail(ctx context.Context, email string) ([]domain.SubscriptionDetails, error)
 }
 
 type githubClient interface {
@@ -29,7 +28,7 @@ type subscriptionRepository interface {
 	Confirm(ctx context.Context, token string) error
 	DeleteByUnsubscribeToken(ctx context.Context, token string) error
 	HasAnyByRepositoryID(ctx context.Context, repositoryID int64) (bool, error)
-	ListSubscriptionDetailsByEmail(ctx context.Context, email string) ([]subscription.Details, error)
+	ListSubscriptionDetailsByEmail(ctx context.Context, email string) ([]domain.SubscriptionDetails, error)
 }
 
 type repositoryRepository interface {
@@ -109,7 +108,7 @@ func (s *subscriptionService) Unsubscribe(ctx context.Context, token string) err
 	return s.cleanupRepositoryIfOrphaned(ctx, subscriptionDomain.RepositoryID)
 }
 
-func (s *subscriptionService) ListByEmail(ctx context.Context, email string) ([]subscription.Details, error) {
+func (s *subscriptionService) ListByEmail(ctx context.Context, email string) ([]domain.SubscriptionDetails, error) {
 	email = strings.TrimSpace(email)
 	if err := validateEmailFormat(email); err != nil {
 		return nil, err

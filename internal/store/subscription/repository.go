@@ -21,7 +21,7 @@ type Repository interface {
 	DeleteByUnsubscribeToken(ctx context.Context, token string) error
 	HasAnyByRepositoryID(ctx context.Context, repositoryID int64) (bool, error)
 	ListConfirmedByRepositoryID(ctx context.Context, repositoryID int64) ([]domain.Subscription, error)
-	ListSubscriptionDetailsByEmail(ctx context.Context, email string) ([]Details, error)
+	ListSubscriptionDetailsByEmail(ctx context.Context, email string) ([]domain.SubscriptionDetails, error)
 }
 
 type PostgresSubscriptionRepository struct {
@@ -164,16 +164,16 @@ func (r *PostgresSubscriptionRepository) ListConfirmedByRepositoryID(
 	return subs, nil
 }
 
-func (r *PostgresSubscriptionRepository) ListSubscriptionDetailsByEmail(ctx context.Context, email string) ([]Details, error) {
+func (r *PostgresSubscriptionRepository) ListSubscriptionDetailsByEmail(ctx context.Context, email string) ([]domain.SubscriptionDetails, error) {
 	rows, err := r.pool.Query(ctx, listSubscriptionDetailsByEmailQuery, email)
 	if err != nil {
 		return nil, fmt.Errorf("query subscriptions details by email %s: %w", email, err)
 	}
 	defer rows.Close()
 
-	var details []Details
+	var details []domain.SubscriptionDetails
 	for rows.Next() {
-		var detail Details
+		var detail domain.SubscriptionDetails
 		err := rows.Scan(
 			&detail.Email,
 			&detail.Repo,
