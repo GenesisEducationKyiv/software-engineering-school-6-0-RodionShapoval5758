@@ -164,7 +164,7 @@ func (w *Worker) processRepository(ctx context.Context, repo domain.Repository) 
 		return nil
 	}
 
-	if !w.hasNewRelease(repo, release) {
+	if !repo.HasNewRelease(release.Tag) {
 		w.logUnchangedRelease(repo, release)
 
 		return nil
@@ -192,10 +192,6 @@ func (w *Worker) getLatestRelease(ctx context.Context, repo domain.Repository) (
 	}
 
 	return release, nil
-}
-
-func (w *Worker) hasNewRelease(repo domain.Repository, release *github.Release) bool {
-	return repo.LastSeenTag == nil || release.Tag != *repo.LastSeenTag
 }
 
 func (w *Worker) markReleaseSeen(ctx context.Context, repositoryID int64, tag string) error {

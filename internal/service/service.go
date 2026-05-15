@@ -63,7 +63,6 @@ func NewSubscriptionService(
 	}
 }
 
-const TokenLength = 32
 const maxTokenGenerationAttempts = 5
 
 func (s *subscriptionService) Subscribe(ctx context.Context, email string, repo string) error {
@@ -188,19 +187,12 @@ func (s *subscriptionService) createRepositoryWithConflictRecovery(ctx context.C
 
 func (s *subscriptionService) createPendingSubscription(ctx context.Context, email string, repositoryID int64) (string, error) {
 	for range maxTokenGenerationAttempts {
-		confirmToken, unsubscribeToken, err := GenerateTokens()
+		sub, err := domain.NewSubscription(email, repositoryID)
 		if err != nil {
-			return "", err
+			return "", fmt.Errorf("prepare domain subscription: %w", err)
 		}
 
-		subscriptionInput := domain.Subscription{
-			Email:            email,
-			RepositoryID:     repositoryID,
-			ConfirmToken:     confirmToken,
-			UnsubscribeToken: unsubscribeToken,
-		}
-
-		err = s.subscriptionRepository.Create(ctx, subscriptionInput)
+		err = s.subscriptionRepository.Create(ctx, *sub)
 		if errors.Is(err, store.ErrTokensAlreadyExists) {
 			continue
 		}
@@ -216,7 +208,7 @@ func (s *subscriptionService) createPendingSubscription(ctx context.Context, ema
 			}
 		}
 
-		return confirmToken, nil
+		return sub.ConfirmToken, nil
 	}
 
 	return "", fmt.Errorf("create subscription tokens conflict after retries: %w", store.ErrTokensAlreadyExists)
@@ -286,18 +278,4 @@ func (s *subscriptionService) cleanupRepositoryIfOrphaned(ctx context.Context, r
 	}
 
 	return nil
-}
-
-func GenerateTokens() (string, string, error) {
-	token1, err := GenerateToken(TokenLength)
-	if err != nil {
-		return "", "", fmt.Errorf("create token: %w", err)
-	}
-
-	token2, err := GenerateToken(TokenLength)
-	if err != nil {
-		return "", "", fmt.Errorf("create token: %w", err)
-	}
-
-	return token1, token2, nil
 }
