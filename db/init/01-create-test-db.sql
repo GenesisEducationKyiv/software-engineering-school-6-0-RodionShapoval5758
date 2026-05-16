@@ -1,0 +1,1 @@
+CREATE DATABASE github_release_notifications_test;
