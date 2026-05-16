@@ -4,7 +4,7 @@ import (
 	"fmt"
 	"net/smtp"
 
-	"GithubReleaseNotificationAPI/internal/github"
+	"GithubReleaseNotificationAPI/internal/domain"
 )
 
 type smtpService struct {
@@ -41,7 +41,7 @@ func (s *smtpService) SendConfirmationEmail(toEmail, repoName, confirmToken stri
 	return s.send(toEmail, subject, body)
 }
 
-func (s *smtpService) SendReleaseNotification(toEmail string, token string, release *github.Release) error {
+func (s *smtpService) SendReleaseNotification(toEmail string, token string, release *domain.Release) error {
 	subject := fmt.Sprintf("New Release for %s: %s", release.Name, release.Tag)
 	unsubscribeLink := fmt.Sprintf("%s/api/unsubscribe/%s", s.appBaseURL, token)
 
@@ -75,7 +75,7 @@ func (s *smtpService) send(toEmail, subject, body string) error {
 	address := fmt.Sprintf("%s:%s", s.host, s.port)
 	err := smtp.SendMail(address, auth, s.fromEmail, []string{toEmail}, []byte(msg))
 	if err != nil {
-		return fmt.Errorf("failed to send email to %s: %w", toEmail, err)
+		return fmt.Errorf("send email: %w", err)
 	}
 
 	return nil
