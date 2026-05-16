@@ -1,4 +1,4 @@
-.PHONY: lint lint-fix lint-all format format-check
+.PHONY: lint-fix lint-all format format-check
 
 lint:
 	golangci-lint run -c .golangci.yaml
@@ -11,5 +11,3 @@ format:
 
 format-check:
 	golangci-lint fmt -c .golangci.yaml --diff
-
-lint-all: lint
