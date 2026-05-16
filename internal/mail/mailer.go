@@ -7,7 +7,7 @@ import (
 	"GithubReleaseNotificationAPI/internal/domain"
 )
 
-type smtpService struct {
+type SmtpService struct {
 	host       string
 	port       string
 	user       string
@@ -16,8 +16,8 @@ type smtpService struct {
 	appBaseURL string
 }
 
-func NewSMTPService(host, port, user, pass, fromEmail, appBaseURL string) Service {
-	return &smtpService{
+func NewSMTPService(host, port, user, pass, fromEmail, appBaseURL string) *SmtpService {
+	return &SmtpService{
 		host:       host,
 		port:       port,
 		user:       user,
@@ -27,7 +27,7 @@ func NewSMTPService(host, port, user, pass, fromEmail, appBaseURL string) Servic
 	}
 }
 
-func (s *smtpService) SendConfirmationEmail(toEmail, repoName, confirmToken string) error {
+func (s *SmtpService) SendConfirmationEmail(toEmail, repoName, confirmToken string) error {
 	subject := fmt.Sprintf("Confirm subscription: %s", repoName)
 	confirmLink := fmt.Sprintf("%s/api/confirm/%s", s.appBaseURL, confirmToken)
 
@@ -41,7 +41,7 @@ func (s *smtpService) SendConfirmationEmail(toEmail, repoName, confirmToken stri
 	return s.send(toEmail, subject, body)
 }
 
-func (s *smtpService) SendReleaseNotification(toEmail string, token string, release *domain.Release) error {
+func (s *SmtpService) SendReleaseNotification(toEmail string, token string, release *domain.Release) error {
 	subject := fmt.Sprintf("New Release for %s: %s", release.Name, release.Tag)
 	unsubscribeLink := fmt.Sprintf("%s/api/unsubscribe/%s", s.appBaseURL, token)
 
@@ -58,7 +58,7 @@ func (s *smtpService) SendReleaseNotification(toEmail string, token string, rele
 	return s.send(toEmail, subject, body)
 }
 
-func (s *smtpService) send(toEmail, subject, body string) error {
+func (s *SmtpService) send(toEmail, subject, body string) error {
 	var auth smtp.Auth
 	if s.user != "" && s.pass != "" {
 		auth = smtp.PlainAuth("", s.user, s.pass, s.host)
