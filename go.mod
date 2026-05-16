@@ -1,6 +1,6 @@
 module GithubReleaseNotificationAPI
 
-go 1.26.2
+go 1.26
 
 require (
 	github.com/go-chi/chi/v5 v5.2.5
@@ -17,6 +17,7 @@ require (
 	github.com/jackc/puddle/v2 v2.2.2 // indirect
 	github.com/lib/pq v1.12.3 // indirect
 	github.com/pmezard/go-difflib v1.0.1-0.20181226105442-5d4384ee4fb2 // indirect
+	github.com/stretchr/objx v0.5.2 // indirect
 	github.com/stretchr/testify v1.11.1 // indirect
 	golang.org/x/sync v0.20.0 // indirect
 	golang.org/x/text v0.37.0 // indirect
