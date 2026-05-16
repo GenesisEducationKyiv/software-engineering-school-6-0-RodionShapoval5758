@@ -45,6 +45,15 @@ func TestSubscriptionServiceTestSuite(t *testing.T) {
 	suite.Run(t, new(SubscriptionServiceTestSuite))
 }
 
+func validSubMatcher(email string, repoID int64) interface{} {
+	return mock.MatchedBy(func(sub domain.Subscription) bool {
+		return sub.Email == email &&
+			sub.RepositoryID == repoID &&
+			sub.ConfirmToken != "" &&
+			sub.UnsubscribeToken != ""
+	})
+}
+
 // --- Subscribe ---
 
 func (s *SubscriptionServiceTestSuite) TestSubscribe_InvalidInput() {
@@ -70,6 +79,28 @@ func (s *SubscriptionServiceTestSuite) TestSubscribe_InvalidInput() {
 			s.assertExpectations()
 		})
 	}
+}
+
+func (s *SubscriptionServiceTestSuite) TestSubscribe_NormalizesInput() {
+	repo := &domain.Repository{ID: 1, FullName: "owner/repo"}
+
+	s.github.On("CheckRepo", mock.Anything, "owner/repo").Return(nil)
+	s.repoRepo.On("FindByFullName", mock.Anything, "owner/repo").Return(repo, nil)
+
+	var capturedToken string
+	s.subRepo.On("Create", mock.Anything, validSubMatcher("user@example.com", repo.ID)).
+		Run(func(args mock.Arguments) {
+			capturedToken = args.Get(1).(domain.Subscription).ConfirmToken
+		}).
+		Return(nil)
+	s.smtp.On("SendConfirmationEmail", "user@example.com", "owner/repo", mock.MatchedBy(func(token string) bool {
+		return token != "" && token == capturedToken
+	})).Return(nil)
+
+	err := s.svc.Subscribe(context.Background(), "  user@example.com  ", "  owner/repo  ")
+
+	s.NoError(err)
+	s.assertExpectations()
 }
 
 func (s *SubscriptionServiceTestSuite) TestSubscribe_GithubRepoNotFound() {
@@ -113,13 +144,21 @@ func (s *SubscriptionServiceTestSuite) TestSubscribe_RepoExistsInDB() {
 
 	s.github.On("CheckRepo", mock.Anything, "owner/repo").Return(nil)
 	s.repoRepo.On("FindByFullName", mock.Anything, "owner/repo").Return(repo, nil)
-	s.subRepo.On("Create", mock.Anything, mock.Anything).Return(nil)
-	s.smtp.On("SendConfirmationEmail", "user@example.com", "owner/repo", mock.Anything).Return(nil)
+
+	var capturedToken string
+	s.subRepo.On("Create", mock.Anything, validSubMatcher("user@example.com", repo.ID)).
+		Run(func(args mock.Arguments) {
+			capturedToken = args.Get(1).(domain.Subscription).ConfirmToken
+		}).
+		Return(nil)
+	s.smtp.On("SendConfirmationEmail", "user@example.com", "owner/repo", mock.MatchedBy(func(token string) bool {
+		return token != "" && token == capturedToken
+	})).Return(nil)
 
 	err := s.svc.Subscribe(context.Background(), "user@example.com", "owner/repo")
 
 	s.NoError(err)
-	s.assertExpectations() // repoRepo.Create has no .On() — if called, test panics
+	s.assertExpectations()
 }
 
 func (s *SubscriptionServiceTestSuite) TestSubscribe_RepoNotInDB_Created() {
@@ -128,8 +167,16 @@ func (s *SubscriptionServiceTestSuite) TestSubscribe_RepoNotInDB_Created() {
 	s.github.On("CheckRepo", mock.Anything, "owner/repo").Return(nil)
 	s.repoRepo.On("FindByFullName", mock.Anything, "owner/repo").Return(nil, store.ErrNotFound)
 	s.repoRepo.On("Create", mock.Anything, "owner/repo").Return(repo, nil)
-	s.subRepo.On("Create", mock.Anything, mock.Anything).Return(nil)
-	s.smtp.On("SendConfirmationEmail", "user@example.com", "owner/repo", mock.Anything).Return(nil)
+
+	var capturedToken string
+	s.subRepo.On("Create", mock.Anything, validSubMatcher("user@example.com", repo.ID)).
+		Run(func(args mock.Arguments) {
+			capturedToken = args.Get(1).(domain.Subscription).ConfirmToken
+		}).
+		Return(nil)
+	s.smtp.On("SendConfirmationEmail", "user@example.com", "owner/repo", mock.MatchedBy(func(token string) bool {
+		return token != "" && token == capturedToken
+	})).Return(nil)
 
 	err := s.svc.Subscribe(context.Background(), "user@example.com", "owner/repo")
 
@@ -154,8 +201,16 @@ func (s *SubscriptionServiceTestSuite) TestSubscribe_RepoCreateRaceRecovery() {
 	s.repoRepo.On("FindByFullName", mock.Anything, "owner/repo").Return(nil, store.ErrNotFound).Once()
 	s.repoRepo.On("Create", mock.Anything, "owner/repo").Return(nil, store.ErrAlreadyExists)
 	s.repoRepo.On("FindByFullName", mock.Anything, "owner/repo").Return(repo, nil).Once()
-	s.subRepo.On("Create", mock.Anything, mock.Anything).Return(nil)
-	s.smtp.On("SendConfirmationEmail", "user@example.com", "owner/repo", mock.Anything).Return(nil)
+
+	var capturedToken string
+	s.subRepo.On("Create", mock.Anything, validSubMatcher("user@example.com", repo.ID)).
+		Run(func(args mock.Arguments) {
+			capturedToken = args.Get(1).(domain.Subscription).ConfirmToken
+		}).
+		Return(nil)
+	s.smtp.On("SendConfirmationEmail", "user@example.com", "owner/repo", mock.MatchedBy(func(token string) bool {
+		return token != "" && token == capturedToken
+	})).Return(nil)
 
 	err := s.svc.Subscribe(context.Background(), "user@example.com", "owner/repo")
 
@@ -191,7 +246,8 @@ func (s *SubscriptionServiceTestSuite) TestSubscribe_SubscriptionAlreadyExists()
 
 	s.github.On("CheckRepo", mock.Anything, "owner/repo").Return(nil)
 	s.repoRepo.On("FindByFullName", mock.Anything, "owner/repo").Return(repo, nil)
-	s.subRepo.On("Create", mock.Anything, mock.Anything).Return(store.ErrAlreadyExists)
+	s.subRepo.On("Create", mock.Anything, validSubMatcher("user@example.com", repo.ID)).
+		Return(store.ErrAlreadyExists)
 
 	err := s.svc.Subscribe(context.Background(), "user@example.com", "owner/repo")
 
@@ -204,9 +260,19 @@ func (s *SubscriptionServiceTestSuite) TestSubscribe_TokenCollisionRetry() {
 
 	s.github.On("CheckRepo", mock.Anything, "owner/repo").Return(nil)
 	s.repoRepo.On("FindByFullName", mock.Anything, "owner/repo").Return(repo, nil)
-	s.subRepo.On("Create", mock.Anything, mock.Anything).Return(store.ErrTokensAlreadyExists).Once()
-	s.subRepo.On("Create", mock.Anything, mock.Anything).Return(nil).Once()
-	s.smtp.On("SendConfirmationEmail", "user@example.com", "owner/repo", mock.Anything).Return(nil)
+
+	matcher := validSubMatcher("user@example.com", repo.ID)
+
+	var capturedToken string
+	s.subRepo.On("Create", mock.Anything, matcher).Return(store.ErrTokensAlreadyExists).Once()
+	s.subRepo.On("Create", mock.Anything, matcher).
+		Run(func(args mock.Arguments) {
+			capturedToken = args.Get(1).(domain.Subscription).ConfirmToken
+		}).
+		Return(nil).Once()
+	s.smtp.On("SendConfirmationEmail", "user@example.com", "owner/repo", mock.MatchedBy(func(token string) bool {
+		return token != "" && token == capturedToken
+	})).Return(nil)
 
 	err := s.svc.Subscribe(context.Background(), "user@example.com", "owner/repo")
 
@@ -219,7 +285,8 @@ func (s *SubscriptionServiceTestSuite) TestSubscribe_TokenCollisionExhausted() {
 
 	s.github.On("CheckRepo", mock.Anything, "owner/repo").Return(nil)
 	s.repoRepo.On("FindByFullName", mock.Anything, "owner/repo").Return(repo, nil)
-	s.subRepo.On("Create", mock.Anything, mock.Anything).Return(store.ErrTokensAlreadyExists).Times(5)
+	s.subRepo.On("Create", mock.Anything, validSubMatcher("user@example.com", repo.ID)).
+		Return(store.ErrTokensAlreadyExists).Times(5)
 
 	err := s.svc.Subscribe(context.Background(), "user@example.com", "owner/repo")
 
@@ -232,7 +299,8 @@ func (s *SubscriptionServiceTestSuite) TestSubscribe_SubscriptionDBError() {
 
 	s.github.On("CheckRepo", mock.Anything, "owner/repo").Return(nil)
 	s.repoRepo.On("FindByFullName", mock.Anything, "owner/repo").Return(repo, nil)
-	s.subRepo.On("Create", mock.Anything, mock.Anything).Return(errors.New("db error"))
+	s.subRepo.On("Create", mock.Anything, validSubMatcher("user@example.com", repo.ID)).
+		Return(errors.New("db error"))
 
 	err := s.svc.Subscribe(context.Background(), "user@example.com", "owner/repo")
 
@@ -245,8 +313,16 @@ func (s *SubscriptionServiceTestSuite) TestSubscribe_EmailSendFails() {
 
 	s.github.On("CheckRepo", mock.Anything, "owner/repo").Return(nil)
 	s.repoRepo.On("FindByFullName", mock.Anything, "owner/repo").Return(repo, nil)
-	s.subRepo.On("Create", mock.Anything, mock.Anything).Return(nil)
-	s.smtp.On("SendConfirmationEmail", "user@example.com", "owner/repo", mock.Anything).Return(errors.New("smtp error"))
+
+	var capturedToken string
+	s.subRepo.On("Create", mock.Anything, validSubMatcher("user@example.com", repo.ID)).
+		Run(func(args mock.Arguments) {
+			capturedToken = args.Get(1).(domain.Subscription).ConfirmToken
+		}).
+		Return(nil)
+	s.smtp.On("SendConfirmationEmail", "user@example.com", "owner/repo", mock.MatchedBy(func(token string) bool {
+		return token != "" && token == capturedToken
+	})).Return(errors.New("smtp error"))
 
 	err := s.svc.Subscribe(context.Background(), "user@example.com", "owner/repo")
 
@@ -259,8 +335,16 @@ func (s *SubscriptionServiceTestSuite) TestSubscribe_HappyPath_RepoExistsInDB() 
 
 	s.github.On("CheckRepo", mock.Anything, "owner/repo").Return(nil)
 	s.repoRepo.On("FindByFullName", mock.Anything, "owner/repo").Return(repo, nil)
-	s.subRepo.On("Create", mock.Anything, mock.Anything).Return(nil)
-	s.smtp.On("SendConfirmationEmail", "user@example.com", "owner/repo", mock.Anything).Return(nil)
+
+	var capturedToken string
+	s.subRepo.On("Create", mock.Anything, validSubMatcher("user@example.com", repo.ID)).
+		Run(func(args mock.Arguments) {
+			capturedToken = args.Get(1).(domain.Subscription).ConfirmToken
+		}).
+		Return(nil)
+	s.smtp.On("SendConfirmationEmail", "user@example.com", "owner/repo", mock.MatchedBy(func(token string) bool {
+		return token != "" && token == capturedToken
+	})).Return(nil)
 
 	err := s.svc.Subscribe(context.Background(), "user@example.com", "owner/repo")
 
@@ -274,8 +358,16 @@ func (s *SubscriptionServiceTestSuite) TestSubscribe_HappyPath_RepoCreated() {
 	s.github.On("CheckRepo", mock.Anything, "owner/repo").Return(nil)
 	s.repoRepo.On("FindByFullName", mock.Anything, "owner/repo").Return(nil, store.ErrNotFound)
 	s.repoRepo.On("Create", mock.Anything, "owner/repo").Return(repo, nil)
-	s.subRepo.On("Create", mock.Anything, mock.Anything).Return(nil)
-	s.smtp.On("SendConfirmationEmail", "user@example.com", "owner/repo", mock.Anything).Return(nil)
+
+	var capturedToken string
+	s.subRepo.On("Create", mock.Anything, validSubMatcher("user@example.com", repo.ID)).
+		Run(func(args mock.Arguments) {
+			capturedToken = args.Get(1).(domain.Subscription).ConfirmToken
+		}).
+		Return(nil)
+	s.smtp.On("SendConfirmationEmail", "user@example.com", "owner/repo", mock.MatchedBy(func(token string) bool {
+		return token != "" && token == capturedToken
+	})).Return(nil)
 
 	err := s.svc.Subscribe(context.Background(), "user@example.com", "owner/repo")
 
