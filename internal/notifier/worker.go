@@ -5,6 +5,7 @@ import (
 	"errors"
 	"log/slog"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"GithubReleaseNotificationAPI/internal/domain"
@@ -86,11 +87,10 @@ func (w *Worker) runOneScan(ctx context.Context) error {
 
 	slog.Info("worker loaded tracked repositories", "count", len(repositories))
 
-	if err := w.processRepositories(scanCtx, cancelScan, repositories); err != nil {
-		return err
-	}
+	var rateLimited atomic.Bool
+	w.processRepositories(scanCtx, cancelScan, &rateLimited, repositories)
 
-	if ctx.Err() == nil && scanCtx.Err() != nil {
+	if rateLimited.Load() {
 		return github.ErrRateLimited
 	}
 
@@ -104,8 +104,9 @@ func (w *Worker) listTrackedRepositories(ctx context.Context) ([]domain.Reposito
 func (w *Worker) processRepositories(
 	scanCtx context.Context,
 	cancelScan context.CancelFunc,
+	rateLimited *atomic.Bool,
 	repositories []domain.Repository,
-) error {
+) {
 	sem := make(chan struct{}, maxConcurrentRepositoryScans)
 	var waitGroup sync.WaitGroup
 	for _, repo := range repositories {
@@ -118,21 +119,21 @@ func (w *Worker) processRepositories(
 			defer waitGroup.Done()
 			defer func() { <-sem }()
 			if err := w.processRepository(scanCtx, r); err != nil {
-				w.handleRepositoryProcessingError(err, r, cancelScan)
+				w.handleRepositoryProcessingError(err, r, cancelScan, rateLimited)
 			}
 		}(repo)
 	}
 	waitGroup.Wait()
-
-	return nil
 }
 
 func (w *Worker) handleRepositoryProcessingError(
 	err error,
 	repo domain.Repository,
 	cancelScan context.CancelFunc,
+	rateLimited *atomic.Bool,
 ) {
 	if errors.Is(err, github.ErrRateLimited) {
+		rateLimited.Store(true)
 		cancelScan()
 
 		return
