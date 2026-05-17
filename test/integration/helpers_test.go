@@ -15,9 +15,15 @@ type fakeGithubClient struct{}
 func (f *fakeGithubClient) CheckRepo(_ context.Context, _ string) error { return nil }
 
 func (s *IntegrationSuite) do(method, path string, body io.Reader) *httptest.ResponseRecorder {
+	return s.doWithAuth(method, path, body, "Bearer "+testAPIKey)
+}
+
+func (s *IntegrationSuite) doWithAuth(method, path string, body io.Reader, authHeader string) *httptest.ResponseRecorder {
 	req := httptest.NewRequest(method, path, body)
 	req.Header.Set("Content-Type", "application/json")
-	req.Header.Set("Authorization", "Bearer "+testAPIKey)
+	if authHeader != "" {
+		req.Header.Set("Authorization", authHeader)
+	}
 	w := httptest.NewRecorder()
 	s.router.ServeHTTP(w, req)
 	return w
