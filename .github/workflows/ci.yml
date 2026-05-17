@@ -7,7 +7,7 @@ on:
 env:
   FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
 jobs:
-  build-test:
+  build:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout repo
@@ -18,8 +18,59 @@ jobs:
           go-version-file: go.mod
       - name: Build
         run: go build ./...
-      - name: Test
+
+  unit-test:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repo
+        uses: actions/checkout@v6
+      - name: Set up Golang
+        uses: actions/setup-go@v6
+        with:
+          go-version-file: go.mod
+      - name: Run unit tests
         run: go test ./...
+
+  integration-test:
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: password
+          POSTGRES_DB: github_release_notifications
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+      mailpit:
+        image: axllent/mailpit
+        ports:
+          - 1025:1025
+          - 8025:8025
+        env:
+          MP_SMTP_AUTH_ACCEPT_ANY: 1
+          MP_SMTP_AUTH_ALLOW_INSECURE: 1
+    steps:
+      - name: Checkout repo
+        uses: actions/checkout@v6
+      - name: Set up Golang
+        uses: actions/setup-go@v6
+        with:
+          go-version-file: go.mod
+      - name: Create test database
+        run: psql -h localhost -U postgres -c "CREATE DATABASE github_release_notifications_test;"
+        env:
+          PGPASSWORD: password
+      - name: Run integration tests
+        run: go test -tags=integration ./test/integration/... -v
+        env:
+          TEST_DATABASE_URL: postgres://postgres:password@localhost:5432/github_release_notifications_test?sslmode=disable
+
   lint:
     runs-on: ubuntu-latest
     steps:
