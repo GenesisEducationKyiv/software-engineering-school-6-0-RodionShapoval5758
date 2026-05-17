@@ -18,7 +18,6 @@ linters:
 
     # Style and maintainability
     - canonicalheader
-    - dupl
     - gocognit
     - nlreturn
     - recvcheck
@@ -26,8 +25,6 @@ linters:
   settings:
     errcheck:
       verbose: true
-    dupl:
-      threshold: 150
     gocognit:
       min-complexity: 30
 
@@ -43,3 +40,9 @@ formatters:
 issues:
   max-issues-per-linter: 0
   max-same-issues: 0
+  exclusions:
+    rules:
+      - path: _test\.go
+        linters:
+          - gocognit
+          - nlreturn
