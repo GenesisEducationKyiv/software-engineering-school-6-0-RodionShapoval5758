@@ -85,7 +85,7 @@ func TestNewSubscription(t *testing.T) {
 		t.Error("UnsubscribeToken should not be empty")
 	}
 
-	if sub.IsConfirmed() {
+	if sub.Confirmed {
 		t.Error("new subscription should not be confirmed")
 	}
 }
