@@ -1,11 +1,30 @@
 package mail
 
 import (
+	"bytes"
 	"fmt"
+	"html/template"
 	"net/smtp"
 
 	"GithubReleaseNotificationAPI/internal/domain"
 )
+
+var confirmationTmpl = template.Must(template.New("confirmation").Parse(`
+<p>Confirm subscription to <b>{{.RepoName}}</b>:</p>
+<p>
+	<a href="{{.ConfirmLink}}" style="background-color: #2ea44f; color: white; padding: 10px 20px; text-decoration: none; border-radius: 5px; display: inline-block;">Confirm Subscription</a>
+</p>
+`))
+
+var releaseTmpl = template.Must(template.New("release").Parse(`
+<h3>New release available for <b>{{.ReleaseName}}</b></h3>
+<p><b>Tag:</b> {{.Tag}}</p>
+<p><b>Name:</b> {{.ReleaseName}}</p>
+<p><a href="{{.ReleaseURL}}" style="background-color: #0366d6; color: white; padding: 8px 16px; text-decoration: none; border-radius: 5px; display: inline-block;">View Release on GitHub</a></p>
+<p style="margin-top: 16px;">
+	<a href="{{.UnsubscribeLink}}" style="color: #6a737d; text-decoration: underline;">Unsubscribe from these notifications</a>
+</p>
+`))
 
 type SMTPService struct {
 	host       string
@@ -29,33 +48,40 @@ func NewSMTPService(host, port, user, pass, fromEmail, appBaseURL string) *SMTPS
 
 func (s *SMTPService) SendConfirmationEmail(toEmail, repoName, confirmToken string) error {
 	subject := fmt.Sprintf("Confirm subscription: %s", repoName)
-	confirmLink := fmt.Sprintf("%s/api/confirm/%s", s.appBaseURL, confirmToken)
 
-	body := fmt.Sprintf(`
-		<p>Confirm subscription to <b>%s</b>:</p>
-		<p>
-			<a href="%s" style="background-color: #2ea44f; color: white; padding: 10px 20px; text-decoration: none; border-radius: 5px; display: inline-block;">Confirm Subscription</a>
-		</p>
-	`, repoName, confirmLink)
+	var buf bytes.Buffer
+	if err := confirmationTmpl.Execute(&buf, struct {
+		RepoName    string
+		ConfirmLink string
+	}{
+		RepoName:    repoName,
+		ConfirmLink: fmt.Sprintf("%s/api/confirm/%s", s.appBaseURL, confirmToken),
+	}); err != nil {
+		return fmt.Errorf("render confirmation email: %w", err)
+	}
 
-	return s.send(toEmail, subject, body)
+	return s.send(toEmail, subject, buf.String())
 }
 
 func (s *SMTPService) SendReleaseNotification(toEmail string, token string, release *domain.Release) error {
 	subject := fmt.Sprintf("New Release for %s: %s", release.Name, release.Tag)
-	unsubscribeLink := fmt.Sprintf("%s/api/unsubscribe/%s", s.appBaseURL, token)
 
-	body := fmt.Sprintf(`
-		<h3>New release available for <b>%s</b></h3>
-		<p><b>Tag:</b> %s</p>
-		<p><b>Name:</b> %s</p>
-		<p><a href="%s" style="background-color: #0366d6; color: white; padding: 8px 16px; text-decoration: none; border-radius: 5px; display: inline-block;">View Release on GitHub</a></p>
-		<p style="margin-top: 16px;">
-			<a href="%s" style="color: #6a737d; text-decoration: underline;">Unsubscribe from these notifications</a>
-		</p>
-	`, release.Name, release.Tag, release.Name, release.URL, unsubscribeLink)
+	var buf bytes.Buffer
+	if err := releaseTmpl.Execute(&buf, struct {
+		ReleaseName     string
+		Tag             string
+		ReleaseURL      string
+		UnsubscribeLink string
+	}{
+		ReleaseName:     release.Name,
+		Tag:             release.Tag,
+		ReleaseURL:      release.URL,
+		UnsubscribeLink: fmt.Sprintf("%s/api/unsubscribe/%s", s.appBaseURL, token),
+	}); err != nil {
+		return fmt.Errorf("render release notification email: %w", err)
+	}
 
-	return s.send(toEmail, subject, body)
+	return s.send(toEmail, subject, buf.String())
 }
 
 func (s *SMTPService) send(toEmail, subject, body string) error {
