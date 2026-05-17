@@ -88,11 +88,15 @@ func main() {
 	shutdownSignalCtx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
 
-	worker := notifier.NewWorker(
+	releaseNotifier := notifier.NewReleaseNotifier(
 		smtpClient,
-		githubClient,
 		subscriptionRepository,
+	)
+
+	worker := notifier.NewWorker(
+		githubClient,
 		repositoryRepository,
+		releaseNotifier,
 	)
 
 	go func() {

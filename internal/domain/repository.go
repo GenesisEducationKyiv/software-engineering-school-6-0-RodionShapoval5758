@@ -9,3 +9,7 @@ type Repository struct {
 	CreatedAt   time.Time
 	UpdatedAt   time.Time
 }
+
+func (r *Repository) HasNewRelease(tag string) bool {
+	return r.LastSeenTag == nil || tag != *r.LastSeenTag
+}

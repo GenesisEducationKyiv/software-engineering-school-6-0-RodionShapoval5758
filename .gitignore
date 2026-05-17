@@ -2,6 +2,7 @@
 # Codex and Gemini
 AGENTS.md
 GEMINI.md
+CLAUDE.md
 .codex
 
 # Binaries
@@ -37,4 +38,3 @@ go.work.sum
 
 # OS files
 .DS_Store
-

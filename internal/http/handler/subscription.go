@@ -1,22 +1,31 @@
 package handler
 
 import (
+	"context"
 	"encoding/json"
+	"errors"
 	"net/http"
 	"strings"
 
+	"GithubReleaseNotificationAPI/internal/domain"
 	"GithubReleaseNotificationAPI/internal/http/models"
 	"GithubReleaseNotificationAPI/internal/http/util"
-	"GithubReleaseNotificationAPI/internal/service"
 
 	"github.com/go-chi/chi/v5"
 )
 
-type Handler struct {
-	subscriptionService service.SubscriptionService
+type subscriptionService interface {
+	Subscribe(ctx context.Context, email string, repo string) error
+	Confirm(ctx context.Context, token string) error
+	Unsubscribe(ctx context.Context, token string) error
+	ListByEmail(ctx context.Context, email string) ([]domain.SubscriptionDetails, error)
 }
 
-func New(subscriptionService service.SubscriptionService) *Handler {
+type Handler struct {
+	subscriptionService subscriptionService
+}
+
+func New(subscriptionService subscriptionService) *Handler {
 	return &Handler{
 		subscriptionService: subscriptionService,
 	}
@@ -30,8 +39,8 @@ func (h *Handler) Subscribe(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if req.Email == "" || req.Repo == "" {
-		util.WriteErrorResponse(w, http.StatusBadRequest, "email/repo is empty")
+	if err := requireNonEmptySubscriptionFields(req.Email, req.Repo); err != nil {
+		util.WriteErrorResponse(w, http.StatusBadRequest, err.Error())
 
 		return
 	}
@@ -50,8 +59,8 @@ func (h *Handler) Subscribe(w http.ResponseWriter, r *http.Request) {
 func (h *Handler) Confirm(w http.ResponseWriter, r *http.Request) {
 	token := chi.URLParam(r, "token")
 
-	if token == "" {
-		http.Error(w, "Invalid token", http.StatusBadRequest)
+	if err := requireToken(token, 1); err != nil {
+		util.WriteErrorResponse(w, http.StatusBadRequest, err.Error())
 
 		return
 	}
@@ -70,8 +79,8 @@ func (h *Handler) Confirm(w http.ResponseWriter, r *http.Request) {
 func (h *Handler) Unsubscribe(w http.ResponseWriter, r *http.Request) {
 	token := chi.URLParam(r, "token")
 
-	if token == "" || len(token) < 8 {
-		http.Error(w, "Invalid token", http.StatusBadRequest)
+	if err := requireToken(token, 8); err != nil {
+		util.WriteErrorResponse(w, http.StatusBadRequest, err.Error())
 
 		return
 	}
@@ -90,8 +99,8 @@ func (h *Handler) Unsubscribe(w http.ResponseWriter, r *http.Request) {
 func (h *Handler) ListSubscriptions(w http.ResponseWriter, r *http.Request) {
 	email := r.URL.Query().Get("email")
 
-	if email == "" {
-		util.WriteErrorResponse(w, http.StatusBadRequest, "empty email")
+	if err := requireNonEmptyEmail(email); err != nil {
+		util.WriteErrorResponse(w, http.StatusBadRequest, err.Error())
 
 		return
 	}
@@ -126,4 +135,28 @@ func decodeSubscriptionRequest(r *http.Request) (models.SubscriptionRequest, err
 		Email: r.Form.Get("email"),
 		Repo:  r.Form.Get("repo"),
 	}, nil
+}
+
+func requireNonEmptySubscriptionFields(email string, repo string) error {
+	if email == "" || repo == "" {
+		return errors.New("email/repo is empty")
+	}
+
+	return nil
+}
+
+func requireToken(token string, minLen int) error {
+	if len(token) < minLen {
+		return errors.New("invalid token")
+	}
+
+	return nil
+}
+
+func requireNonEmptyEmail(email string) error {
+	if email == "" {
+		return errors.New("empty email")
+	}
+
+	return nil
 }

@@ -8,6 +8,8 @@ import (
 	"net/http"
 	"strings"
 	"time"
+
+	"GithubReleaseNotificationAPI/internal/domain"
 )
 
 const (
@@ -20,13 +22,6 @@ type Service struct {
 	client      *http.Client
 	githubToken *string
 	baseURL     string
-}
-
-type Release struct {
-	Tag         string
-	Name        string
-	URL         string
-	PublishedAt time.Time
 }
 
 type latestReleaseResponse struct {
@@ -58,14 +53,14 @@ func (s *Service) CheckRepo(ctx context.Context, fullName string) error {
 		}
 	}()
 
-	if err := determineRepsonse(resp); err != nil {
+	if err := determineResponse(resp); err != nil {
 		return err
 	}
 
 	return nil
 }
 
-func (s *Service) GetLatestTag(ctx context.Context, fullName string) (*Release, error) {
+func (s *Service) GetLatestTag(ctx context.Context, fullName string) (*domain.Release, error) {
 	ctx, cancel := context.WithTimeout(ctx, 5*time.Second)
 	defer cancel()
 
@@ -79,7 +74,7 @@ func (s *Service) GetLatestTag(ctx context.Context, fullName string) (*Release, 
 		}
 	}()
 
-	if err := determineRepsonse(resp); err != nil {
+	if err := determineResponse(resp); err != nil {
 		return nil, err
 	}
 
@@ -88,12 +83,7 @@ func (s *Service) GetLatestTag(ctx context.Context, fullName string) (*Release, 
 		return nil, fmt.Errorf("decode latest github release response: %w", err)
 	}
 
-	return &Release{
-		Tag:         githubRelease.TagName,
-		Name:        githubRelease.Name,
-		URL:         githubRelease.HTMLURL,
-		PublishedAt: githubRelease.PublishedAt,
-	}, nil
+	return githubRelease.toDomain(), nil
 }
 
 func (s *Service) doGet(ctx context.Context, path string) (*http.Response, error) {
@@ -122,7 +112,16 @@ func (s *Service) doGet(ctx context.Context, path string) (*http.Response, error
 	return resp, nil
 }
 
-func determineRepsonse(resp *http.Response) error {
+func (r latestReleaseResponse) toDomain() *domain.Release {
+	return &domain.Release{
+		Tag:         r.TagName,
+		Name:        r.Name,
+		URL:         r.HTMLURL,
+		PublishedAt: r.PublishedAt,
+	}
+}
+
+func determineResponse(resp *http.Response) error {
 	switch resp.StatusCode {
 	case http.StatusOK:
 		return nil
