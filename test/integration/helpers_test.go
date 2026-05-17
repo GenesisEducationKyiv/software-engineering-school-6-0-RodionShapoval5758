@@ -10,9 +10,11 @@ import (
 	"net/http/httptest"
 )
 
-type fakeGithubClient struct{}
+type fakeGithubClient struct {
+	err error
+}
 
-func (f *fakeGithubClient) CheckRepo(_ context.Context, _ string) error { return nil }
+func (f *fakeGithubClient) CheckRepo(_ context.Context, _ string) error { return f.err }
 
 func (s *IntegrationSuite) do(method, path string, body io.Reader) *httptest.ResponseRecorder {
 	return s.doWithAuth(method, path, body, "Bearer "+testAPIKey)
