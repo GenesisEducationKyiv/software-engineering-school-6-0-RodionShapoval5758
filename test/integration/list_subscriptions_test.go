@@ -15,7 +15,7 @@ func (s *IntegrationSuite) TestListSubscriptions_HappyPath() {
 
 	s.Equal(http.StatusOK, w.Code)
 
-	var result []map[string]interface{}
+	var result []map[string]any
 	err := json.NewDecoder(w.Body).Decode(&result)
 	s.Require().NoError(err)
 	s.Len(result, 1)
@@ -46,7 +46,7 @@ func (s *IntegrationSuite) TestListSubscriptions_NoSubscriptions() {
 
 	s.Equal(http.StatusOK, w.Code)
 
-	var result []map[string]interface{}
+	var result []map[string]any
 	err := json.NewDecoder(w.Body).Decode(&result)
 	s.Require().NoError(err)
 	s.Len(result, 0)
@@ -60,7 +60,7 @@ func (s *IntegrationSuite) TestListSubscriptions_UnconfirmedNotReturned() {
 
 	s.Equal(http.StatusOK, w.Code)
 
-	var result []map[string]interface{}
+	var result []map[string]any
 	err := json.NewDecoder(w.Body).Decode(&result)
 	s.Require().NoError(err)
 	s.Len(result, 0)
@@ -76,7 +76,7 @@ func (s *IntegrationSuite) TestListSubscriptions_MultipleRepos() {
 
 	s.Equal(http.StatusOK, w.Code)
 
-	var result []map[string]interface{}
+	var result []map[string]any
 	err := json.NewDecoder(w.Body).Decode(&result)
 	s.Require().NoError(err)
 	s.Len(result, 2)

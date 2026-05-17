@@ -45,7 +45,7 @@ func TestSubscriptionServiceTestSuite(t *testing.T) {
 	suite.Run(t, new(SubscriptionServiceTestSuite))
 }
 
-func validSubMatcher(email string, repoID int64) interface{} {
+func validSubMatcher(email string, repoID int64) any {
 	return mock.MatchedBy(func(sub domain.Subscription) bool {
 		return sub.Email == email &&
 			sub.RepositoryID == repoID &&
