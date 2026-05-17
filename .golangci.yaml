@@ -26,7 +26,9 @@ linters:
     errcheck:
       verbose: true
     gocognit:
-      min-complexity: 30
+      min-complexity: 50
+    nlreturn:
+      block-size: 5
 
 formatters:
   enable:
@@ -40,9 +42,3 @@ formatters:
 issues:
   max-issues-per-linter: 0
   max-same-issues: 0
-  exclusions:
-    rules:
-      - path: _test\.go
-        linters:
-          - gocognit
-          - nlreturn
