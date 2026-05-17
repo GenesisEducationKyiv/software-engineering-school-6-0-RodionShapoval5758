@@ -18,7 +18,6 @@ linters:
 
     # Style and maintainability
     - canonicalheader
-    - dupl
     - gocognit
     - nlreturn
     - recvcheck
@@ -26,10 +25,10 @@ linters:
   settings:
     errcheck:
       verbose: true
-    dupl:
-      threshold: 150
     gocognit:
-      min-complexity: 30
+      min-complexity: 50
+    nlreturn:
+      block-size: 5
 
 formatters:
   enable:

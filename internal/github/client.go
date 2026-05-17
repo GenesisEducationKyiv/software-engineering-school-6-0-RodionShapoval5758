@@ -8,6 +8,8 @@ import (
 	"net/http"
 	"strings"
 	"time"
+
+	"GithubReleaseNotificationAPI/internal/domain"
 )
 
 const (
@@ -20,13 +22,6 @@ type Service struct {
 	client      *http.Client
 	githubToken *string
 	baseURL     string
-}
-
-type Release struct {
-	Tag         string
-	Name        string
-	URL         string
-	PublishedAt time.Time
 }
 
 type latestReleaseResponse struct {
@@ -65,7 +60,7 @@ func (s *Service) CheckRepo(ctx context.Context, fullName string) error {
 	return nil
 }
 
-func (s *Service) GetLatestTag(ctx context.Context, fullName string) (*Release, error) {
+func (s *Service) GetLatestTag(ctx context.Context, fullName string) (*domain.Release, error) {
 	ctx, cancel := context.WithTimeout(ctx, 5*time.Second)
 	defer cancel()
 
@@ -88,7 +83,7 @@ func (s *Service) GetLatestTag(ctx context.Context, fullName string) (*Release, 
 		return nil, fmt.Errorf("decode latest github release response: %w", err)
 	}
 
-	return &Release{
+	return &domain.Release{
 		Tag:         githubRelease.TagName,
 		Name:        githubRelease.Name,
 		URL:         githubRelease.HTMLURL,
