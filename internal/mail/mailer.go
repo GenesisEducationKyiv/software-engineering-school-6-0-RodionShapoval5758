@@ -77,7 +77,7 @@ func (s *SMTPService) SendReleaseNotifications(subscriptions []domain.Subscripti
 	if err != nil {
 		return fmt.Errorf("dial smtp: %w", err)
 	}
-	defer client.Close()
+	defer func() { _ = client.Close() }()
 
 	if ok, _ := client.Extension("STARTTLS"); ok {
 		if err := client.StartTLS(&tls.Config{ServerName: s.host}); err != nil {
@@ -136,8 +136,10 @@ func (s *SMTPService) sendOneViaClient(client *smtp.Client, sub domain.Subscript
 	}
 	if _, err := w.Write([]byte(msg)); err != nil {
 		_ = w.Close()
+
 		return fmt.Errorf("write message: %w", err)
 	}
+
 	return w.Close()
 }
 

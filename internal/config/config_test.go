@@ -147,9 +147,13 @@ func clearConfigEnv(t *testing.T) {
 		}
 		t.Cleanup(func() {
 			if existed {
-				os.Setenv(key, original)
+				if err := os.Setenv(key, original); err != nil {
+					t.Errorf("os.Setenv(%q): %v", key, err)
+				}
 			} else {
-				os.Unsetenv(key)
+				if err := os.Unsetenv(key); err != nil {
+					t.Errorf("os.Unsetenv(%q): %v", key, err)
+				}
 			}
 		})
 	}
