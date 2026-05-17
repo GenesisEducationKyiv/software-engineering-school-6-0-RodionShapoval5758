@@ -14,16 +14,19 @@ type mockSubscriptionService struct {
 
 func (m *mockSubscriptionService) Subscribe(ctx context.Context, email, repo string) error {
 	args := m.Called(ctx, email, repo)
+
 	return args.Error(0)
 }
 
 func (m *mockSubscriptionService) Confirm(ctx context.Context, token string) error {
 	args := m.Called(ctx, token)
+
 	return args.Error(0)
 }
 
 func (m *mockSubscriptionService) Unsubscribe(ctx context.Context, token string) error {
 	args := m.Called(ctx, token)
+
 	return args.Error(0)
 }
 
@@ -32,5 +35,6 @@ func (m *mockSubscriptionService) ListByEmail(ctx context.Context, email string)
 	if args.Get(0) == nil {
 		return nil, args.Error(1)
 	}
+
 	return args.Get(0).([]domain.SubscriptionDetails), args.Error(1)
 }
