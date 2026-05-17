@@ -24,3 +24,16 @@ func (s *IntegrationSuite) TestConfirm_HappyPath() {
 	s.Require().NoError(err)
 	s.True(confirmed)
 }
+
+func (s *IntegrationSuite) TestConfirm_UnknownToken() {
+	w := s.do(http.MethodGet, "/api/confirm/unknown-token", nil)
+	s.Equal(http.StatusNotFound, w.Code)
+}
+
+func (s *IntegrationSuite) TestConfirm_AlreadyConfirmed() {
+	repoID := s.seedRepository("owner/repo")
+	s.seedSubscription("user@example.com", "confirm-token-abc", "unsub-token-12345678", repoID, true)
+
+	w := s.do(http.MethodGet, "/api/confirm/confirm-token-abc", nil)
+	s.Equal(http.StatusOK, w.Code)
+}
