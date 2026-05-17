@@ -1,6 +1,7 @@
 package config
 
 import (
+	"os"
 	"strings"
 	"testing"
 )
@@ -140,6 +141,16 @@ func clearConfigEnv(t *testing.T) {
 		"MAIN_URL",
 		"API_KEY",
 	} {
-		t.Setenv(key, "")
+		original, existed := os.LookupEnv(key)
+		if err := os.Unsetenv(key); err != nil {
+			t.Fatalf("os.Unsetenv(%q): %v", key, err)
+		}
+		t.Cleanup(func() {
+			if existed {
+				os.Setenv(key, original)
+			} else {
+				os.Unsetenv(key)
+			}
+		})
 	}
 }
