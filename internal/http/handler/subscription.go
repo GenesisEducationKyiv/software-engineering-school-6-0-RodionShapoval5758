@@ -115,6 +115,10 @@ func (h *Handler) ListSubscriptions(w http.ResponseWriter, r *http.Request) {
 	util.WriteJSONResponse(w, http.StatusOK, models.ConvertToResponseModel(subscriptions))
 }
 
+func (h *Handler) ValidateAPIKey(writer http.ResponseWriter, request *http.Request) {
+	writer.WriteHeader(http.StatusOK)
+}
+
 func decodeSubscriptionRequest(r *http.Request) (models.SubscriptionRequest, error) {
 	contentType := r.Header.Get("Content-Type")
 
