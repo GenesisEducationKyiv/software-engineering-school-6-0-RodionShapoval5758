@@ -11,6 +11,13 @@ import (
 	"GithubReleaseNotificationAPI/internal/store"
 )
 
+type SubscriptionService interface {
+	Subscribe(ctx context.Context, email string, repo string) error
+	Confirm(ctx context.Context, token string) error
+	Unsubscribe(ctx context.Context, token string) error
+	ListByEmail(ctx context.Context, email string) ([]domain.SubscriptionDetails, error)
+}
+
 type githubClient interface {
 	CheckRepo(ctx context.Context, fullName string) error
 }
@@ -46,7 +53,7 @@ func NewSubscriptionService(
 	repositoryRepository repositoryRepository,
 	githubClient githubClient,
 	smtpClient smtpClient,
-) *subscriptionService {
+) SubscriptionService {
 	return &subscriptionService{
 		subscriptionRepository: subscriptionRepository,
 		repositoryRepository:   repositoryRepository,
