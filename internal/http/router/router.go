@@ -21,6 +21,7 @@ func New(handler *handler.Handler, apiKey string) http.Handler {
 			r.Use(middlewaref.AuthAPIKEY(apiKey))
 			r.Post("/subscribe", handler.Subscribe)
 			r.Get("/subscriptions", handler.ListSubscriptions)
+			r.Get("/validate", handler.ValidateAPIKey)
 		})
 	} else {
 		router.Get("/api/subscriptions", handler.ListSubscriptions)
