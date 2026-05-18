@@ -1,23 +1,31 @@
 package handler
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
 	"net/http"
 	"strings"
 
+	"GithubReleaseNotificationAPI/internal/domain"
 	"GithubReleaseNotificationAPI/internal/http/models"
 	"GithubReleaseNotificationAPI/internal/http/util"
-	"GithubReleaseNotificationAPI/internal/service"
 
 	"github.com/go-chi/chi/v5"
 )
 
-type Handler struct {
-	subscriptionService service.SubscriptionService
+type subscriptionService interface {
+	Subscribe(ctx context.Context, email string, repo string) error
+	Confirm(ctx context.Context, token string) error
+	Unsubscribe(ctx context.Context, token string) error
+	ListByEmail(ctx context.Context, email string) ([]domain.SubscriptionDetails, error)
 }
 
-func New(subscriptionService service.SubscriptionService) *Handler {
+type Handler struct {
+	subscriptionService subscriptionService
+}
+
+func New(subscriptionService subscriptionService) *Handler {
 	return &Handler{
 		subscriptionService: subscriptionService,
 	}
@@ -105,6 +113,10 @@ func (h *Handler) ListSubscriptions(w http.ResponseWriter, r *http.Request) {
 	}
 
 	util.WriteJSONResponse(w, http.StatusOK, models.ConvertToResponseModel(subscriptions))
+}
+
+func (h *Handler) ValidateAPIKey(writer http.ResponseWriter, request *http.Request) {
+	writer.WriteHeader(http.StatusOK)
 }
 
 func decodeSubscriptionRequest(r *http.Request) (models.SubscriptionRequest, error) {

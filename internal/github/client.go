@@ -53,7 +53,7 @@ func (s *Service) CheckRepo(ctx context.Context, fullName string) error {
 		}
 	}()
 
-	if err := determineRepsonse(resp); err != nil {
+	if err := determineResponse(resp); err != nil {
 		return err
 	}
 
@@ -74,7 +74,7 @@ func (s *Service) GetLatestTag(ctx context.Context, fullName string) (*domain.Re
 		}
 	}()
 
-	if err := determineRepsonse(resp); err != nil {
+	if err := determineResponse(resp); err != nil {
 		return nil, err
 	}
 
@@ -83,12 +83,7 @@ func (s *Service) GetLatestTag(ctx context.Context, fullName string) (*domain.Re
 		return nil, fmt.Errorf("decode latest github release response: %w", err)
 	}
 
-	return &domain.Release{
-		Tag:         githubRelease.TagName,
-		Name:        githubRelease.Name,
-		URL:         githubRelease.HTMLURL,
-		PublishedAt: githubRelease.PublishedAt,
-	}, nil
+	return githubRelease.toDomain(), nil
 }
 
 func (s *Service) doGet(ctx context.Context, path string) (*http.Response, error) {
@@ -117,7 +112,16 @@ func (s *Service) doGet(ctx context.Context, path string) (*http.Response, error
 	return resp, nil
 }
 
-func determineRepsonse(resp *http.Response) error {
+func (r latestReleaseResponse) toDomain() *domain.Release {
+	return &domain.Release{
+		Tag:         r.TagName,
+		Name:        r.Name,
+		URL:         r.HTMLURL,
+		PublishedAt: r.PublishedAt,
+	}
+}
+
+func determineResponse(resp *http.Response) error {
 	switch resp.StatusCode {
 	case http.StatusOK:
 		return nil

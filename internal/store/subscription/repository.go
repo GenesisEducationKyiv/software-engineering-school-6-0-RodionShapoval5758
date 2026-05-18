@@ -14,16 +14,6 @@ import (
 	"github.com/jackc/pgx/v5/pgxpool"
 )
 
-type Repository interface {
-	Create(ctx context.Context, subscription domain.Subscription) error
-	FindByUnsubscribeToken(ctx context.Context, token string) (*domain.Subscription, error)
-	Confirm(ctx context.Context, token string) error
-	DeleteByUnsubscribeToken(ctx context.Context, token string) error
-	HasAnyByRepositoryID(ctx context.Context, repositoryID int64) (bool, error)
-	ListConfirmedByRepositoryID(ctx context.Context, repositoryID int64) ([]domain.Subscription, error)
-	ListSubscriptionDetailsByEmail(ctx context.Context, email string) ([]domain.SubscriptionDetails, error)
-}
-
 type PostgresSubscriptionRepository struct {
 	pool *pgxpool.Pool
 }
