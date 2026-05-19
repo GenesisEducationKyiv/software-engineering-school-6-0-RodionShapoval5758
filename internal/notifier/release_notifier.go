@@ -8,7 +8,7 @@ import (
 )
 
 type smtpClient interface {
-	SendReleaseNotification(toEmail string, unsubscribeToken string, release *domain.Release) error
+	SendReleaseNotifications(subscriptions []domain.Subscription, release *domain.Release) error
 }
 
 type subscriptionRepository interface {
@@ -50,44 +50,9 @@ func (n *ReleaseNotifier) NotifyConfirmedSubscribers(
 		len(subscriptions),
 	)
 
-	for _, subscription := range subscriptions {
-		n.sendReleaseNotification(repo, subscription, release)
+	if len(subscriptions) == 0 {
+		return nil
 	}
 
-	return nil
-}
-
-func (n *ReleaseNotifier) sendReleaseNotification(
-	repo domain.Repository,
-	subscription domain.Subscription,
-	release *domain.Release,
-) {
-	err := n.smtpClient.SendReleaseNotification(subscription.Email, subscription.UnsubscribeToken, release)
-	if err != nil {
-		slog.Error(
-			"worker notification send failed",
-			"repository_id",
-			repo.ID,
-			"repository",
-			repo.FullName,
-			"subscription_id",
-			subscription.ID,
-			"error",
-			err,
-		)
-
-		return
-	}
-
-	slog.Info(
-		"worker notification sent",
-		"repository_id",
-		repo.ID,
-		"repository",
-		repo.FullName,
-		"subscription_id",
-		subscription.ID,
-		"tag",
-		release.Tag,
-	)
+	return n.smtpClient.SendReleaseNotifications(subscriptions, release)
 }

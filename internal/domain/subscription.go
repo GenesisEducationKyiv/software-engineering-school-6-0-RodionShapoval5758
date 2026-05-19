@@ -46,10 +46,6 @@ func NewSubscription(email string, repositoryID int64) (*Subscription, error) {
 	}, nil
 }
 
-func (s *Subscription) IsConfirmed() bool {
-	return s.Confirmed
-}
-
 func generateToken(length int) (string, error) {
 	bytes := make([]byte, length)
 	if _, err := rand.Read(bytes); err != nil {

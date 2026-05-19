@@ -38,12 +38,13 @@ func (s *NotifierTestSuite) TestReleaseNotifier_NoSubscribers() {
 func (s *NotifierTestSuite) TestReleaseNotifier_SingleSubscriber() {
 	repo := domain.Repository{ID: 1, FullName: "owner/repo"}
 	release := &domain.Release{Tag: "v1.0.0"}
-	sub := domain.Subscription{Email: "user@example.com", UnsubscribeToken: "unsub-token"}
+	subs := []domain.Subscription{
+		{Email: "user@example.com", UnsubscribeToken: "unsub-token"},
+	}
 
 	s.subRepo.On("ListConfirmedByRepositoryID", mock.Anything, int64(1)).
-		Return([]domain.Subscription{sub}, nil)
-	s.smtp.On("SendReleaseNotification", "user@example.com", "unsub-token", release).
-		Return(nil)
+		Return(subs, nil)
+	s.smtp.On("SendReleaseNotifications", subs, release).Return(nil)
 
 	err := s.releaseNotifier.NotifyConfirmedSubscribers(context.Background(), repo, release)
 
@@ -61,8 +62,7 @@ func (s *NotifierTestSuite) TestReleaseNotifier_MultipleSubscribers() {
 
 	s.subRepo.On("ListConfirmedByRepositoryID", mock.Anything, int64(1)).
 		Return(subs, nil)
-	s.smtp.On("SendReleaseNotification", "alice@example.com", "token-alice", release).Return(nil)
-	s.smtp.On("SendReleaseNotification", "bob@example.com", "token-bob", release).Return(nil)
+	s.smtp.On("SendReleaseNotifications", subs, release).Return(nil)
 
 	err := s.releaseNotifier.NotifyConfirmedSubscribers(context.Background(), repo, release)
 
@@ -70,7 +70,7 @@ func (s *NotifierTestSuite) TestReleaseNotifier_MultipleSubscribers() {
 	s.assertExpectations()
 }
 
-func (s *NotifierTestSuite) TestReleaseNotifier_SMTPFails_ContinuesLoop() {
+func (s *NotifierTestSuite) TestReleaseNotifier_SMTPError_Propagates() {
 	repo := domain.Repository{ID: 1, FullName: "owner/repo"}
 	release := &domain.Release{Tag: "v1.0.0"}
 	subs := []domain.Subscription{
@@ -80,13 +80,11 @@ func (s *NotifierTestSuite) TestReleaseNotifier_SMTPFails_ContinuesLoop() {
 
 	s.subRepo.On("ListConfirmedByRepositoryID", mock.Anything, int64(1)).
 		Return(subs, nil)
-	s.smtp.On("SendReleaseNotification", "alice@example.com", "token-alice", release).
-		Return(errors.New("smtp error"))
-	s.smtp.On("SendReleaseNotification", "bob@example.com", "token-bob", release).
-		Return(nil)
+	s.smtp.On("SendReleaseNotifications", subs, release).
+		Return(errors.New("partial smtp failure"))
 
 	err := s.releaseNotifier.NotifyConfirmedSubscribers(context.Background(), repo, release)
 
-	s.NoError(err)
+	s.Error(err)
 	s.assertExpectations()
 }

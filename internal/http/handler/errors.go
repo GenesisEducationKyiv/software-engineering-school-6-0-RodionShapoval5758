@@ -23,6 +23,8 @@ func handleError(w http.ResponseWriter, err error) {
 		util.WriteErrorResponse(w, http.StatusConflict, "Email already subscribed to this repository")
 	case errors.Is(err, service.ErrTooMuchRequests):
 		util.WriteErrorResponse(w, http.StatusTooManyRequests, "Github API request limit is hit")
+	case errors.Is(err, service.ErrGitHubUnauthorized):
+		util.WriteErrorResponse(w, http.StatusBadGateway, "GitHub API token is invalid or expired")
 	default:
 		slog.Error("internal server error", "error", err.Error())
 		util.WriteErrorResponse(w, http.StatusInternalServerError, "internal server error")

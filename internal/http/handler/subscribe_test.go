@@ -92,6 +92,7 @@ func (s *SubscriptionHandlerTestSuite) TestSubscribe_ServiceErrors() {
 		{"repo not found", service.ErrRepoNotFound, http.StatusNotFound},
 		{"already exists", service.ErrSubscriptionAlreadyExists, http.StatusConflict},
 		{"rate limited", service.ErrTooMuchRequests, http.StatusTooManyRequests},
+		{"github unauthorized", service.ErrGitHubUnauthorized, http.StatusBadGateway},
 		{"unknown error", errors.New("db down"), http.StatusInternalServerError},
 	}
 

@@ -143,6 +143,8 @@ func (s *subscriptionService) verifyRepositoryExists(ctx context.Context, repo s
 			return ErrRepoNotFound
 		case errors.Is(err, gh.ErrRateLimited):
 			return ErrTooMuchRequests
+		case errors.Is(err, gh.ErrUnauthorized):
+			return ErrGitHubUnauthorized
 		case errors.Is(err, gh.ErrUnexpectedResponse):
 			return fmt.Errorf("github repo check failed: %w", err)
 		default:

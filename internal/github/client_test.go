@@ -49,6 +49,18 @@ func TestCheckRepoRateLimited(t *testing.T) {
 	}
 }
 
+func TestCheckRepoUnauthorized(t *testing.T) {
+	client, closeServer := newTestGithubClient(t, func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusUnauthorized)
+	})
+	defer closeServer()
+
+	err := client.CheckRepo(context.Background(), "golang/go")
+	if !errors.Is(err, ErrUnauthorized) {
+		t.Fatalf("expected ErrUnauthorized, got %v", err)
+	}
+}
+
 func TestGetLatestTagOK(t *testing.T) {
 	client, closeServer := newTestGithubClient(t, func(w http.ResponseWriter, r *http.Request) {
 		if r.URL.Path != "/repos/golang/go/releases/latest" {

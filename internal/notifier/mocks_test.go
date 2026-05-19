@@ -12,8 +12,8 @@ type mockSmtpClient struct {
 	mock.Mock
 }
 
-func (m *mockSmtpClient) SendReleaseNotification(toEmail, unsubscribeToken string, release *domain.Release) error {
-	args := m.Called(toEmail, unsubscribeToken, release)
+func (m *mockSmtpClient) SendReleaseNotifications(subscriptions []domain.Subscription, release *domain.Release) error {
+	args := m.Called(subscriptions, release)
 
 	return args.Error(0)
 }

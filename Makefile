@@ -1,5 +1,11 @@
 .PHONY: test test-integration lint-fix lint-all format format-check
 
+build:
+	docker compose up --build -d
+up:
+	docker compose up -d
+down:
+	docker compose down
 test:
 	go test ./...
 

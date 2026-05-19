@@ -121,6 +121,15 @@ func (s *SubscriptionServiceTestSuite) TestSubscribe_GithubRateLimited() {
 	s.assertExpectations()
 }
 
+func (s *SubscriptionServiceTestSuite) TestSubscribe_GithubUnauthorized() {
+	s.github.On("CheckRepo", mock.Anything, "owner/repo").Return(gh.ErrUnauthorized)
+
+	err := s.svc.Subscribe(context.Background(), "user@example.com", "owner/repo")
+
+	s.ErrorIs(err, service.ErrGitHubUnauthorized)
+	s.assertExpectations()
+}
+
 func (s *SubscriptionServiceTestSuite) TestSubscribe_GithubUnexpectedResponse() {
 	s.github.On("CheckRepo", mock.Anything, "owner/repo").Return(gh.ErrUnexpectedResponse)
 
