@@ -127,6 +127,8 @@ func determineResponse(resp *http.Response) error {
 		return nil
 	case http.StatusNotFound:
 		return ErrNotFound
+	case http.StatusUnauthorized:
+		return ErrUnauthorized
 	case http.StatusForbidden, http.StatusTooManyRequests:
 		if resp.Header.Get("X-Ratelimit-Remaining") == "0" || resp.Header.Get("Retry-After") != "" {
 			return ErrRateLimited
