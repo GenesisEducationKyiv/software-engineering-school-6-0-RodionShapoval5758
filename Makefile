@@ -1,4 +1,4 @@
-.PHONY: test test-integration lint-fix lint-all format format-check
+.PHONY: test test-integration test-e2e lint-fix lint-all format format-check
 
 build:
 	docker compose up --build -d
@@ -15,6 +15,11 @@ test-integration:
 	TEST_DATABASE_URL="postgres://postgres:password@localhost:5432/github_release_notifications_test?sslmode=disable" \
 		go test -tags=integration ./test/integration/... -v
 	docker compose down
+
+test-e2e:
+	API_KEY=test-api-key docker compose up -d --wait --build
+	cd frontend && API_KEY=test-api-key npx playwright test
+	docker compose down -v
 
 lint:
 	golangci-lint run -c .golangci.yaml
