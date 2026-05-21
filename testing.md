@@ -41,8 +41,20 @@ make test-integration
 
 ---
 
+## E2E Tests
+
+Covers the full subscribe → confirm → view subscription happy path via a real browser (Chromium).
+
+Requires Docker. The command builds and starts the full stack (app, postgres, mailpit, nginx), runs Playwright, then tears everything down.
+
+```bash
+make test-e2e
+```
+
+---
+
 ## Running All Tests
 
 ```bash
-make test && make test-integration
+make test && make test-integration && make test-e2e
 ```
