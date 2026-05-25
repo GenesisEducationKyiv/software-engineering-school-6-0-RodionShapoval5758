@@ -72,7 +72,8 @@ func (s *SubscriptionServiceTestSuite) TestUnsubscribe_RepositoryStillHasSubscri
 	err := s.svc.Unsubscribe(context.Background(), "token123")
 
 	s.NoError(err)
-	s.assertExpectations() // repoRepo.DeleteByID has no .On() — panics if called
+	s.repoRepo.AssertNotCalled(s.T(), "DeleteByID")
+	s.assertExpectations()
 }
 
 func (s *SubscriptionServiceTestSuite) TestUnsubscribe_OrphanedRepositoryDeleted() {
