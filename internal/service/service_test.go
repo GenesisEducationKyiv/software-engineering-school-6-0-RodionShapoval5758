@@ -135,7 +135,7 @@ func (s *SubscriptionServiceTestSuite) TestSubscribe_GithubUnexpectedResponse() 
 
 	err := s.svc.Subscribe(context.Background(), "user@example.com", "owner/repo")
 
-	s.Error(err)
+	s.ErrorIs(err, gh.ErrUnexpectedResponse)
 	s.assertExpectations()
 }
 
