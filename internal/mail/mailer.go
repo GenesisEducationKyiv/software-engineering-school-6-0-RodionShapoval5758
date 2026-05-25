@@ -65,8 +65,6 @@ func (s *SMTPService) SendConfirmationEmail(toEmail, repoName, confirmToken stri
 	return s.send(toEmail, subject, buf.String())
 }
 
-// SendReleaseNotifications sends a release email to each subscriber over a single
-// SMTP connection. Per-recipient failures are collected and returned via errors.Join.
 func (s *SMTPService) SendReleaseNotifications(subscriptions []domain.Subscription, release *domain.Release) error {
 	if len(subscriptions) == 0 {
 		return nil
