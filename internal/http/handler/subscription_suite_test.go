@@ -54,6 +54,7 @@ func (s *SubscriptionHandlerTestSuite) requireErrorResponse(rec *httptest.Respon
 
 func (s *SubscriptionHandlerTestSuite) requireJSONResponse(rec *httptest.ResponseRecorder, status int, target any) {
 	s.Equal(status, rec.Code)
+	s.Equal("application/json", rec.Header().Get("Content-Type"))
 	s.Require().NoError(json.Unmarshal(rec.Body.Bytes(), target))
 }
 
