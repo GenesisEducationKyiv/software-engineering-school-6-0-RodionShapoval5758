@@ -21,6 +21,8 @@ func (s *SubscriptionServiceTestSuite) TestListByEmail_InvalidEmail() {
 
 	for _, tc := range cases {
 		s.Run(tc.name, func() {
+			s.SetupTest()
+
 			result, err := s.svc.ListByEmail(context.Background(), tc.email)
 
 			s.ErrorIs(err, service.ErrInvalidEmailFormat)

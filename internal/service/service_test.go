@@ -73,6 +73,8 @@ func (s *SubscriptionServiceTestSuite) TestSubscribe_InvalidInput() {
 
 	for _, tc := range cases {
 		s.Run(tc.name, func() {
+			s.SetupTest()
+
 			err := s.svc.Subscribe(context.Background(), tc.email, tc.repo)
 
 			s.ErrorIs(err, tc.wantErr)
