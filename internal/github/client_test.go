@@ -31,14 +31,30 @@ func TestCheckRepoNotFound(t *testing.T) {
 }
 
 func TestCheckRepoRateLimited(t *testing.T) {
-	client, closeServer := newTestGithubClient(t, func(w http.ResponseWriter, r *http.Request) {
-		w.Header().Set("X-Ratelimit-Remaining", "0")
-		w.WriteHeader(http.StatusForbidden)
-	})
-	defer closeServer()
+	cases := []struct {
+		name   string
+		status int
+		header string
+		value  string
+	}{
+		{"403 + X-Ratelimit-Remaining", http.StatusForbidden, "X-Ratelimit-Remaining", "0"},
+		{"403 + Retry-After", http.StatusForbidden, "Retry-After", "60"},
+		{"429 + X-Ratelimit-Remaining", http.StatusTooManyRequests, "X-Ratelimit-Remaining", "0"},
+		{"429 + Retry-After", http.StatusTooManyRequests, "Retry-After", "60"},
+	}
 
-	err := client.CheckRepo(context.Background(), "golang/go")
-	require.ErrorIs(t, err, ErrRateLimited)
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			client, closeServer := newTestGithubClient(t, func(w http.ResponseWriter, r *http.Request) {
+				w.Header().Set(tc.header, tc.value)
+				w.WriteHeader(tc.status)
+			})
+			defer closeServer()
+
+			err := client.CheckRepo(context.Background(), "golang/go")
+			require.ErrorIs(t, err, ErrRateLimited)
+		})
+	}
 }
 
 func TestCheckRepoUnauthorized(t *testing.T) {
