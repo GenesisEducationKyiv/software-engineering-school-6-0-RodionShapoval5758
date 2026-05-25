@@ -30,14 +30,17 @@ func TestGenerateToken(t *testing.T) {
 
 			require.NoError(t, err)
 
+			if tt.length == 0 {
+				assert.Empty(t, got)
+				return
+			}
+
 			decoded, err := base64.RawURLEncoding.DecodeString(got)
 			require.NoError(t, err, "result should be valid base64")
 			require.Len(t, decoded, tt.length)
 
-			if tt.length > 0 {
-				got2, _ := generateToken(tt.length)
-				assert.NotEqual(t, got, got2, "should not produce the same token twice")
-			}
+			got2, _ := generateToken(tt.length)
+			assert.NotEqual(t, got, got2, "should not produce the same token twice")
 		})
 	}
 }
