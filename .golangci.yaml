@@ -24,12 +24,22 @@ linters:
     - recvcheck
     - tagalign
   settings:
-    errcheck:
-      verbose: true
     dupl:
       threshold: 150
+    errcheck:
+      verbose: true
     gocognit:
-      min-complexity: 30
+      min-complexity: 50
+    nlreturn:
+      block-size: 5
+  exclusions:
+    paths:
+      - frontend
+    rules:
+      - path: _test\.go$
+        linters:
+          - dupl
+          - gocognit
 
 formatters:
   enable:

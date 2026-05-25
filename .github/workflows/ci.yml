@@ -7,7 +7,7 @@ on:
 env:
   FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
 jobs:
-  build-test:
+  build:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout repo
@@ -18,13 +18,66 @@ jobs:
           go-version-file: go.mod
       - name: Build
         run: go build ./...
-      - name: Test
+
+  unit-test:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repo
+        uses: actions/checkout@v6
+      - name: Set up Golang
+        uses: actions/setup-go@v6
+        with:
+          go-version-file: go.mod
+      - name: Run unit tests
         run: go test ./...
+
+  integration-test:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repo
+        uses: actions/checkout@v6
+      - name: Set up Golang
+        uses: actions/setup-go@v6
+        with:
+          go-version-file: go.mod
+      - name: Run integration tests
+        run: go test -tags=integration ./test/integration/... -v
+
+  e2e-test:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repo
+        uses: actions/checkout@v6
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Install Playwright and dependencies
+        working-directory: frontend
+        run: npm ci && npx playwright install --with-deps chromium
+      - name: Start stack
+        run: API_KEY=test-api-key docker compose up -d --wait --build
+      - name: Run e2e tests
+        working-directory: frontend
+        env:
+          API_KEY: test-api-key
+        run: npx playwright test
+      - name: Upload test results
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: playwright-report
+          path: frontend/test-results/
+          retention-days: 7
+      - name: Teardown stack
+        if: always()
+        run: docker compose down -v
+
   lint:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout repo
-        uses: actions/checkout@v5
+        uses: actions/checkout@v6
       - name: Set up Golang
         uses: actions/setup-go@v6
         with:

@@ -2,8 +2,10 @@ package config
 
 import (
 	"os"
-	"strings"
 	"testing"
+
+	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 )
 
 func TestLoadAppliesDefaults(t *testing.T) {
@@ -12,36 +14,26 @@ func TestLoadAppliesDefaults(t *testing.T) {
 	t.Setenv("SMTP_HOST", "localhost")
 
 	cfg, err := Load()
-	if err != nil {
-		t.Fatalf("Load() error = %v", err)
-	}
+	require.NoError(t, err)
 
-	if cfg.Port != "8080" {
-		t.Fatalf("Port = %q, want %q", cfg.Port, "8080")
-	}
-	if cfg.AppBaseURL != "http://localhost:8080" {
-		t.Fatalf("AppBaseURL = %q, want %q", cfg.AppBaseURL, "http://localhost:8080")
-	}
-	if cfg.SMTPPort != "1025" {
-		t.Fatalf("SMTPPort = %q, want %q", cfg.SMTPPort, "1025")
-	}
-	if cfg.FromEmail != "noreply@localhost" {
-		t.Fatalf("FromEmail = %q, want %q", cfg.FromEmail, "noreply@localhost")
-	}
+	assert.Equal(t, "8080", cfg.Port)
+	assert.Equal(t, "http://localhost:8080", cfg.AppBaseURL)
+	assert.Equal(t, "1025", cfg.SMTPPort)
+	assert.Equal(t, "noreply@localhost", cfg.FromEmail)
 }
 
 func TestLoadValidation(t *testing.T) {
 	tests := []struct {
 		name    string
 		env     map[string]string
-		wantErr string
+		wantErr error
 	}{
 		{
 			name: "missing database url",
 			env: map[string]string{
 				"SMTP_HOST": "localhost",
 			},
-			wantErr: "DATABASE_URL is required",
+			wantErr: ErrMissingDatabaseURL,
 		},
 		{
 			name: "invalid port",
@@ -50,7 +42,7 @@ func TestLoadValidation(t *testing.T) {
 				"SMTP_HOST":    "localhost",
 				"PORT":         "bad-port",
 			},
-			wantErr: "PORT must be a valid TCP port",
+			wantErr: ErrInvalidPort,
 		},
 		{
 			name: "invalid main url",
@@ -59,14 +51,14 @@ func TestLoadValidation(t *testing.T) {
 				"SMTP_HOST":    "localhost",
 				"MAIN_URL":     "://bad",
 			},
-			wantErr: "MAIN_URL must be a valid absolute URL",
+			wantErr: ErrInvalidMainURL,
 		},
 		{
 			name: "missing smtp host",
 			env: map[string]string{
 				"DATABASE_URL": "postgres://user:pass@localhost:5432/app",
 			},
-			wantErr: "SMTP_HOST is required",
+			wantErr: ErrMissingSMTPHost,
 		},
 		{
 			name: "invalid smtp port",
@@ -75,7 +67,7 @@ func TestLoadValidation(t *testing.T) {
 				"SMTP_HOST":    "localhost",
 				"SMTP_PORT":    "99999",
 			},
-			wantErr: "SMTP_PORT must be a valid TCP port",
+			wantErr: ErrInvalidSMTPPort,
 		},
 		{
 			name: "smtp auth user without password",
@@ -84,7 +76,7 @@ func TestLoadValidation(t *testing.T) {
 				"SMTP_HOST":    "localhost",
 				"SMTP_USER":    "user",
 			},
-			wantErr: "SMTP_USER and SMTP_PASSWORD must be configured together",
+			wantErr: ErrInvalidSMTPCredentials,
 		},
 		{
 			name: "valid explicit config",
@@ -108,20 +100,12 @@ func TestLoadValidation(t *testing.T) {
 			}
 
 			_, err := Load()
-			if tt.wantErr == "" {
-				if err != nil {
-					t.Fatalf("Load() error = %v, want nil", err)
-				}
-
+			if tt.wantErr == nil {
+				require.NoError(t, err)
 				return
 			}
 
-			if err == nil {
-				t.Fatalf("Load() error = nil, want %q", tt.wantErr)
-			}
-			if !strings.Contains(err.Error(), tt.wantErr) {
-				t.Fatalf("Load() error = %q, want containing %q", err.Error(), tt.wantErr)
-			}
+			require.ErrorIs(t, err, tt.wantErr)
 		})
 	}
 }

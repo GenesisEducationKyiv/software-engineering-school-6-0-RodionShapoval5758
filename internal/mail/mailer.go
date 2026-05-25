@@ -57,7 +57,7 @@ func (s *SMTPService) SendConfirmationEmail(toEmail, repoName, confirmToken stri
 		ConfirmLink string
 	}{
 		RepoName:    repoName,
-		ConfirmLink: fmt.Sprintf("%s/api/confirm/%s", s.appBaseURL, confirmToken),
+		ConfirmLink: fmt.Sprintf("%s/confirm/%s", s.appBaseURL, confirmToken),
 	}); err != nil {
 		return fmt.Errorf("render confirmation email: %w", err)
 	}
@@ -65,8 +65,6 @@ func (s *SMTPService) SendConfirmationEmail(toEmail, repoName, confirmToken stri
 	return s.send(toEmail, subject, buf.String())
 }
 
-// SendReleaseNotifications sends a release email to each subscriber over a single
-// SMTP connection. Per-recipient failures are collected and returned via errors.Join.
 func (s *SMTPService) SendReleaseNotifications(subscriptions []domain.Subscription, release *domain.Release) error {
 	if len(subscriptions) == 0 {
 		return nil
@@ -116,7 +114,7 @@ func (s *SMTPService) sendOneViaClient(client *smtp.Client, sub domain.Subscript
 		ReleaseName:     release.Name,
 		Tag:             release.Tag,
 		ReleaseURL:      release.URL,
-		UnsubscribeLink: fmt.Sprintf("%s/api/unsubscribe/%s", s.appBaseURL, sub.UnsubscribeToken),
+		UnsubscribeLink: fmt.Sprintf("%s/unsubscribe/%s", s.appBaseURL, sub.UnsubscribeToken),
 	}); err != nil {
 		return fmt.Errorf("render release email: %w", err)
 	}

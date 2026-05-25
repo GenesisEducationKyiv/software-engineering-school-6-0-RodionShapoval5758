@@ -50,5 +50,9 @@ func (n *ReleaseNotifier) NotifyConfirmedSubscribers(
 		len(subscriptions),
 	)
 
+	if len(subscriptions) == 0 {
+		return nil
+	}
+
 	return n.smtpClient.SendReleaseNotifications(subscriptions, release)
 }

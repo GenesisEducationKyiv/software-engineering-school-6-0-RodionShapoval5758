@@ -1,12 +1,21 @@
 package config
 
 import (
-	"fmt"
+	"errors"
 	"net/url"
 	"os"
 	"strconv"
 
 	"github.com/joho/godotenv"
+)
+
+var (
+	ErrMissingDatabaseURL     = errors.New("DATABASE_URL is required")
+	ErrInvalidPort            = errors.New("PORT must be a valid TCP port")
+	ErrInvalidMainURL         = errors.New("MAIN_URL must be a valid absolute URL")
+	ErrMissingSMTPHost        = errors.New("SMTP_HOST is required")
+	ErrInvalidSMTPPort        = errors.New("SMTP_PORT must be a valid TCP port")
+	ErrInvalidSMTPCredentials = errors.New("SMTP_USER and SMTP_PASSWORD must be configured together")
 )
 
 type Config struct {
@@ -70,32 +79,32 @@ func (cfg *Config) applyDefaults() {
 
 func (cfg *Config) validate() error {
 	if cfg.DatabaseURL == "" {
-		return fmt.Errorf("DATABASE_URL is required")
+		return ErrMissingDatabaseURL
 	}
 
 	port, err := strconv.Atoi(cfg.Port)
 	if err != nil || port <= 0 || port > 65535 {
-		return fmt.Errorf("PORT must be a valid TCP port")
+		return ErrInvalidPort
 	}
 
 	if cfg.AppBaseURL != "" {
 		parsedURL, err := url.ParseRequestURI(cfg.AppBaseURL)
 		if err != nil || parsedURL.Scheme == "" || parsedURL.Host == "" {
-			return fmt.Errorf("MAIN_URL must be a valid absolute URL")
+			return ErrInvalidMainURL
 		}
 	}
 
 	if cfg.SMTPHost == "" {
-		return fmt.Errorf("SMTP_HOST is required")
+		return ErrMissingSMTPHost
 	}
 
 	smtpPort, err := strconv.Atoi(cfg.SMTPPort)
 	if err != nil || smtpPort <= 0 || smtpPort > 65535 {
-		return fmt.Errorf("SMTP_PORT must be a valid TCP port")
+		return ErrInvalidSMTPPort
 	}
 
 	if (cfg.SMTPUser == "") != (cfg.SMTPPass == "") {
-		return fmt.Errorf("SMTP_USER and SMTP_PASSWORD must be configured together")
+		return ErrInvalidSMTPCredentials
 	}
 
 	return nil

@@ -2,26 +2,22 @@ package github
 
 import (
 	"context"
-	"errors"
 	"net/http"
 	"net/http/httptest"
 	"testing"
+
+	"github.com/stretchr/testify/require"
 )
 
 func TestCheckRepoOK(t *testing.T) {
 	client, closeServer := newTestGithubClient(t, func(w http.ResponseWriter, r *http.Request) {
-		if r.URL.Path != "/repos/golang/go" {
-			t.Fatalf("unexpected path: %s", r.URL.Path)
-		}
-
+		require.Equal(t, "/repos/golang/go", r.URL.Path)
 		w.WriteHeader(http.StatusOK)
 	})
 	defer closeServer()
 
 	err := client.CheckRepo(context.Background(), "golang/go")
-	if err != nil {
-		t.Fatalf("expected nil error, got %v", err)
-	}
+	require.NoError(t, err)
 }
 
 func TestCheckRepoNotFound(t *testing.T) {
@@ -31,30 +27,49 @@ func TestCheckRepoNotFound(t *testing.T) {
 	defer closeServer()
 
 	err := client.CheckRepo(context.Background(), "golang/go")
-	if !errors.Is(err, ErrNotFound) {
-		t.Fatalf("expected ErrNotFound, got %v", err)
-	}
+	require.ErrorIs(t, err, ErrNotFound)
 }
 
 func TestCheckRepoRateLimited(t *testing.T) {
+	cases := []struct {
+		name   string
+		status int
+		header string
+		value  string
+	}{
+		{"403 + X-Ratelimit-Remaining", http.StatusForbidden, "X-Ratelimit-Remaining", "0"},
+		{"403 + Retry-After", http.StatusForbidden, "Retry-After", "60"},
+		{"429 + X-Ratelimit-Remaining", http.StatusTooManyRequests, "X-Ratelimit-Remaining", "0"},
+		{"429 + Retry-After", http.StatusTooManyRequests, "Retry-After", "60"},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			client, closeServer := newTestGithubClient(t, func(w http.ResponseWriter, r *http.Request) {
+				w.Header().Set(tc.header, tc.value)
+				w.WriteHeader(tc.status)
+			})
+			defer closeServer()
+
+			err := client.CheckRepo(context.Background(), "golang/go")
+			require.ErrorIs(t, err, ErrRateLimited)
+		})
+	}
+}
+
+func TestCheckRepoUnauthorized(t *testing.T) {
 	client, closeServer := newTestGithubClient(t, func(w http.ResponseWriter, r *http.Request) {
-		w.Header().Set("X-Ratelimit-Remaining", "0")
-		w.WriteHeader(http.StatusForbidden)
+		w.WriteHeader(http.StatusUnauthorized)
 	})
 	defer closeServer()
 
 	err := client.CheckRepo(context.Background(), "golang/go")
-	if !errors.Is(err, ErrRateLimited) {
-		t.Fatalf("expected ErrRateLimited, got %v", err)
-	}
+	require.ErrorIs(t, err, ErrUnauthorized)
 }
 
 func TestGetLatestTagOK(t *testing.T) {
 	client, closeServer := newTestGithubClient(t, func(w http.ResponseWriter, r *http.Request) {
-		if r.URL.Path != "/repos/golang/go/releases/latest" {
-			t.Fatalf("unexpected path: %s", r.URL.Path)
-		}
-
+		require.Equal(t, "/repos/golang/go/releases/latest", r.URL.Path)
 		w.Header().Set("Content-Type", "application/json")
 		w.WriteHeader(http.StatusOK)
 		_, _ = w.Write([]byte(`{
@@ -67,19 +82,10 @@ func TestGetLatestTagOK(t *testing.T) {
 	defer closeServer()
 
 	release, err := client.GetLatestTag(context.Background(), "golang/go")
-	if err != nil {
-		t.Fatalf("expected nil error, got %v", err)
-	}
-
-	if release.Tag != "v1.2.3" {
-		t.Fatalf("unexpected tag: %q", release.Tag)
-	}
-	if release.Name != "Release 1.2.3" {
-		t.Fatalf("unexpected name: %q", release.Name)
-	}
-	if release.URL != "https://github.com/golang/go/releases/tag/v1.2.3" {
-		t.Fatalf("unexpected url: %q", release.URL)
-	}
+	require.NoError(t, err)
+	require.Equal(t, "v1.2.3", release.Tag)
+	require.Equal(t, "Release 1.2.3", release.Name)
+	require.Equal(t, "https://github.com/golang/go/releases/tag/v1.2.3", release.URL)
 }
 
 func newTestGithubClient(t *testing.T, handler http.HandlerFunc) (*Service, func()) {
