@@ -28,7 +28,7 @@ type IntegrationSuite struct {
 func (s *IntegrationSuite) SetupSuite() {
 	subRepo := subStore.NewSubscriptionRepository(testPool)
 	repoRepo := repoStore.NewRepositoryRepository(testPool)
-	smtpClient := mail.NewSMTPService("localhost", "1025", "", "", "noreply@localhost", "http://localhost:8080")
+	smtpClient := mail.NewSMTPService(smtpHost, smtpPort, "", "", "noreply@localhost", "http://localhost:8080")
 	s.githubFake = &fakeGithubClient{}
 	svc := service.NewSubscriptionService(subRepo, repoRepo, s.githubFake, smtpClient)
 	h := httpHandler.New(svc)

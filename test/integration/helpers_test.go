@@ -53,7 +53,7 @@ func (s *IntegrationSuite) seedSubscription(email, confirmToken, unsubscribeToke
 }
 
 func mailpitCount() int {
-	resp, err := http.Get("http://localhost:8025/api/v1/messages")
+	resp, err := http.Get(mailpitBaseURL+"/api/v1/messages")
 	if err != nil {
 		return -1
 	}
@@ -66,6 +66,6 @@ func mailpitCount() int {
 }
 
 func clearMailpit() {
-	req, _ := http.NewRequest(http.MethodDelete, "http://localhost:8025/api/v1/messages", nil)
+	req, _ := http.NewRequest(http.MethodDelete, mailpitBaseURL+"/api/v1/messages", nil)
 	http.DefaultClient.Do(req)
 }
