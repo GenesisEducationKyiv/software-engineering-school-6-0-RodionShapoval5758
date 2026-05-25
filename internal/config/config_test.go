@@ -26,14 +26,14 @@ func TestLoadValidation(t *testing.T) {
 	tests := []struct {
 		name    string
 		env     map[string]string
-		wantErr string
+		wantErr error
 	}{
 		{
 			name: "missing database url",
 			env: map[string]string{
 				"SMTP_HOST": "localhost",
 			},
-			wantErr: "DATABASE_URL is required",
+			wantErr: ErrMissingDatabaseURL,
 		},
 		{
 			name: "invalid port",
@@ -42,7 +42,7 @@ func TestLoadValidation(t *testing.T) {
 				"SMTP_HOST":    "localhost",
 				"PORT":         "bad-port",
 			},
-			wantErr: "PORT must be a valid TCP port",
+			wantErr: ErrInvalidPort,
 		},
 		{
 			name: "invalid main url",
@@ -51,14 +51,14 @@ func TestLoadValidation(t *testing.T) {
 				"SMTP_HOST":    "localhost",
 				"MAIN_URL":     "://bad",
 			},
-			wantErr: "MAIN_URL must be a valid absolute URL",
+			wantErr: ErrInvalidMainURL,
 		},
 		{
 			name: "missing smtp host",
 			env: map[string]string{
 				"DATABASE_URL": "postgres://user:pass@localhost:5432/app",
 			},
-			wantErr: "SMTP_HOST is required",
+			wantErr: ErrMissingSMTPHost,
 		},
 		{
 			name: "invalid smtp port",
@@ -67,7 +67,7 @@ func TestLoadValidation(t *testing.T) {
 				"SMTP_HOST":    "localhost",
 				"SMTP_PORT":    "99999",
 			},
-			wantErr: "SMTP_PORT must be a valid TCP port",
+			wantErr: ErrInvalidSMTPPort,
 		},
 		{
 			name: "smtp auth user without password",
@@ -76,7 +76,7 @@ func TestLoadValidation(t *testing.T) {
 				"SMTP_HOST":    "localhost",
 				"SMTP_USER":    "user",
 			},
-			wantErr: "SMTP_USER and SMTP_PASSWORD must be configured together",
+			wantErr: ErrInvalidSMTPCredentials,
 		},
 		{
 			name: "valid explicit config",
@@ -100,13 +100,12 @@ func TestLoadValidation(t *testing.T) {
 			}
 
 			_, err := Load()
-			if tt.wantErr == "" {
+			if tt.wantErr == nil {
 				require.NoError(t, err)
 				return
 			}
 
-			require.Error(t, err)
-			assert.Contains(t, err.Error(), tt.wantErr)
+			require.ErrorIs(t, err, tt.wantErr)
 		})
 	}
 }
