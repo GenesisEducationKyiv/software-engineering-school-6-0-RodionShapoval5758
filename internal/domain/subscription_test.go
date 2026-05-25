@@ -3,6 +3,9 @@ package domain
 import (
 	"encoding/base64"
 	"testing"
+
+	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 )
 
 func TestGenerateToken(t *testing.T) {
@@ -11,50 +14,29 @@ func TestGenerateToken(t *testing.T) {
 		length  int
 		wantErr bool
 	}{
-		{
-			name:    "length 16",
-			length:  16,
-			wantErr: false,
-		},
-		{
-			name:    "length 32",
-			length:  32,
-			wantErr: false,
-		},
-		{
-			name:    "length 64",
-			length:  64,
-			wantErr: false,
-		},
-		{
-			name:    "zero length",
-			length:  0,
-			wantErr: false,
-		},
+		{"length 16", 16, false},
+		{"length 32", 32, false},
+		{"length 64", 64, false},
+		{"zero length", 0, false},
 	}
+
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			got, err := generateToken(tt.length)
-			if (err != nil) != tt.wantErr {
-				t.Errorf("generateToken() error = %v, wantErr %v", err, tt.wantErr)
-
-				return
-			}
 			if tt.wantErr {
+				require.Error(t, err)
 				return
 			}
+
+			require.NoError(t, err)
 
 			decoded, err := base64.RawURLEncoding.DecodeString(got)
-			if err != nil {
-				t.Errorf("generateToken() result is not valid base64: %v", err)
-			}
-			if len(decoded) != tt.length {
-				t.Errorf("generateToken() decoded length = %v, want %v", len(decoded), tt.length)
-			}
+			require.NoError(t, err, "result should be valid base64")
+			require.Len(t, decoded, tt.length)
 
-			got2, _ := generateToken(tt.length)
-			if tt.length > 0 && got == got2 {
-				t.Errorf("generateToken() generated the same token twice: %v", got)
+			if tt.length > 0 {
+				got2, _ := generateToken(tt.length)
+				assert.NotEqual(t, got, got2, "should not produce the same token twice")
 			}
 		})
 	}
@@ -65,27 +47,11 @@ func TestNewSubscription(t *testing.T) {
 	repoID := int64(123)
 
 	sub, err := NewSubscription(email, repoID)
-	if err != nil {
-		t.Fatalf("NewSubscription() error = %v", err)
-	}
+	require.NoError(t, err)
 
-	if sub.Email != email {
-		t.Errorf("expected email %s, got %s", email, sub.Email)
-	}
-
-	if sub.RepositoryID != repoID {
-		t.Errorf("expected repoID %d, got %d", repoID, sub.RepositoryID)
-	}
-
-	if len(sub.ConfirmToken) == 0 {
-		t.Error("ConfirmToken should not be empty")
-	}
-
-	if len(sub.UnsubscribeToken) == 0 {
-		t.Error("UnsubscribeToken should not be empty")
-	}
-
-	if sub.Confirmed {
-		t.Error("new subscription should not be confirmed")
-	}
+	assert.Equal(t, email, sub.Email)
+	assert.Equal(t, repoID, sub.RepositoryID)
+	assert.NotEmpty(t, sub.ConfirmToken)
+	assert.NotEmpty(t, sub.UnsubscribeToken)
+	assert.False(t, sub.Confirmed)
 }

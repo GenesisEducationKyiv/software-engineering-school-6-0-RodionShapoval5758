@@ -2,8 +2,10 @@ package config
 
 import (
 	"os"
-	"strings"
 	"testing"
+
+	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 )
 
 func TestLoadAppliesDefaults(t *testing.T) {
@@ -12,22 +14,12 @@ func TestLoadAppliesDefaults(t *testing.T) {
 	t.Setenv("SMTP_HOST", "localhost")
 
 	cfg, err := Load()
-	if err != nil {
-		t.Fatalf("Load() error = %v", err)
-	}
+	require.NoError(t, err)
 
-	if cfg.Port != "8080" {
-		t.Fatalf("Port = %q, want %q", cfg.Port, "8080")
-	}
-	if cfg.AppBaseURL != "http://localhost:8080" {
-		t.Fatalf("AppBaseURL = %q, want %q", cfg.AppBaseURL, "http://localhost:8080")
-	}
-	if cfg.SMTPPort != "1025" {
-		t.Fatalf("SMTPPort = %q, want %q", cfg.SMTPPort, "1025")
-	}
-	if cfg.FromEmail != "noreply@localhost" {
-		t.Fatalf("FromEmail = %q, want %q", cfg.FromEmail, "noreply@localhost")
-	}
+	assert.Equal(t, "8080", cfg.Port)
+	assert.Equal(t, "http://localhost:8080", cfg.AppBaseURL)
+	assert.Equal(t, "1025", cfg.SMTPPort)
+	assert.Equal(t, "noreply@localhost", cfg.FromEmail)
 }
 
 func TestLoadValidation(t *testing.T) {
@@ -109,19 +101,12 @@ func TestLoadValidation(t *testing.T) {
 
 			_, err := Load()
 			if tt.wantErr == "" {
-				if err != nil {
-					t.Fatalf("Load() error = %v, want nil", err)
-				}
-
+				require.NoError(t, err)
 				return
 			}
 
-			if err == nil {
-				t.Fatalf("Load() error = nil, want %q", tt.wantErr)
-			}
-			if !strings.Contains(err.Error(), tt.wantErr) {
-				t.Fatalf("Load() error = %q, want containing %q", err.Error(), tt.wantErr)
-			}
+			require.Error(t, err)
+			assert.Contains(t, err.Error(), tt.wantErr)
 		})
 	}
 }
