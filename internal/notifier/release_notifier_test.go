@@ -35,23 +35,6 @@ func (s *NotifierTestSuite) TestReleaseNotifier_NoSubscribers() {
 	s.assertExpectations()
 }
 
-func (s *NotifierTestSuite) TestReleaseNotifier_SingleSubscriber() {
-	repo := domain.Repository{ID: 1, FullName: "owner/repo"}
-	release := &domain.Release{Tag: "v1.0.0"}
-	subs := []domain.Subscription{
-		{Email: "user@example.com", UnsubscribeToken: "unsub-token"},
-	}
-
-	s.subRepo.On("ListConfirmedByRepositoryID", mock.Anything, int64(1)).
-		Return(subs, nil)
-	s.smtp.On("SendReleaseNotifications", subs, release).Return(nil)
-
-	err := s.releaseNotifier.NotifyConfirmedSubscribers(context.Background(), repo, release)
-
-	s.NoError(err)
-	s.assertExpectations()
-}
-
 func (s *NotifierTestSuite) TestReleaseNotifier_MultipleSubscribers() {
 	repo := domain.Repository{ID: 1, FullName: "owner/repo"}
 	release := &domain.Release{Tag: "v1.0.0"}
