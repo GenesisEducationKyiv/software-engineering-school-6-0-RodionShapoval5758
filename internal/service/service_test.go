@@ -340,4 +340,3 @@ func (s *SubscriptionServiceTestSuite) TestSubscribe_EmailSendFails() {
 	s.Error(err)
 	s.assertExpectations()
 }
-

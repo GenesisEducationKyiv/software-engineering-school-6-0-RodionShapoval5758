@@ -18,17 +18,28 @@ linters:
 
     # Style and maintainability
     - canonicalheader
+    - dupl
     - gocognit
     - nlreturn
     - recvcheck
     - tagalign
   settings:
+    dupl:
+      threshold: 150
     errcheck:
       verbose: true
     gocognit:
       min-complexity: 50
     nlreturn:
       block-size: 5
+  exclusions:
+    paths:
+      - frontend
+    rules:
+      - path: _test\.go$
+        linters:
+          - dupl
+          - gocognit
 
 formatters:
   enable:
