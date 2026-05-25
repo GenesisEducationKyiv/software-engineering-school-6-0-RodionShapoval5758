@@ -69,10 +69,9 @@ func (s *IntegrationSuite) TestSubscribe_Validation() {
 func (s *IntegrationSuite) TestSubscribe_DuplicateSubscription() {
 	body := `{"email":"user@example.com","repo":"owner/repo"}`
 
-	s.do(http.MethodPost, "/api/subscribe", strings.NewReader(body))
-	w := s.do(http.MethodPost, "/api/subscribe", strings.NewReader(body))
+	s.Require().Equal(http.StatusOK, s.do(http.MethodPost, "/api/subscribe", strings.NewReader(body)).Code)
 
-	s.Equal(http.StatusConflict, w.Code)
+	s.Equal(http.StatusConflict, s.do(http.MethodPost, "/api/subscribe", strings.NewReader(body)).Code)
 
 	var count int
 	err := testPool.QueryRow(
