@@ -12,21 +12,16 @@ func TestGenerateToken(t *testing.T) {
 	tests := []struct {
 		name    string
 		length  int
-		wantErr bool
 	}{
-		{"length 16", 16, false},
-		{"length 32", 32, false},
-		{"length 64", 64, false},
-		{"zero length", 0, false},
+		{"length 16", 16},
+		{"length 32", 32},
+		{"length 64", 64},
+		{"zero length", 0},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			got, err := generateToken(tt.length)
-			if tt.wantErr {
-				require.Error(t, err)
-				return
-			}
 
 			require.NoError(t, err)
 

@@ -53,7 +53,7 @@ func (s *IntegrationSuite) seedSubscription(email, confirmToken, unsubscribeToke
 }
 
 func mailpitCount() int {
-	resp, err := http.Get(mailpitBaseURL+"/api/v1/messages")
+	resp, err := http.Get(mailpitBaseURL + "/api/v1/messages")
 	if err != nil {
 		return -1
 	}
