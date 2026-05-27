@@ -80,7 +80,7 @@ func (w *Worker) runOneScan(ctx context.Context) error {
 	scanCtx, cancelScan := context.WithCancel(ctx)
 	defer cancelScan()
 
-	repositories, err := w.listTrackedRepositories(scanCtx)
+	repositories, err := w.repositoryRepository.ListTracked(scanCtx)
 	if err != nil {
 		return err
 	}
@@ -95,10 +95,6 @@ func (w *Worker) runOneScan(ctx context.Context) error {
 	}
 
 	return nil
-}
-
-func (w *Worker) listTrackedRepositories(ctx context.Context) ([]domain.Repository, error) {
-	return w.repositoryRepository.ListTracked(ctx)
 }
 
 func (w *Worker) processRepositories(
