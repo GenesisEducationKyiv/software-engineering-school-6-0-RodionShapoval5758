@@ -142,8 +142,12 @@ func decodeSubscriptionRequest(r *http.Request) (models.SubscriptionRequest, err
 }
 
 func requireNonEmptySubscriptionFields(email string, repo string) error {
-	if email == "" || repo == "" {
-		return errors.New("email/repo is empty")
+	if email == "" {
+		return errors.New("email is empty")
+	}
+
+	if repo == "" {
+		return errors.New("repo is empty")
 	}
 
 	return nil
