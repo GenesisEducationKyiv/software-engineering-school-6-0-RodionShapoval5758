@@ -2,15 +2,15 @@ package handler
 
 import (
 	"errors"
-	"log/slog"
 	"net/http"
 
 	"GithubReleaseNotificationAPI/internal/domain"
+	"GithubReleaseNotificationAPI/internal/http/middleware"
 	"GithubReleaseNotificationAPI/internal/http/respond"
 	"GithubReleaseNotificationAPI/internal/service"
 )
 
-func handleError(w http.ResponseWriter, err error) {
+func handleError(w http.ResponseWriter, r *http.Request, err error) {
 	switch {
 	case errors.Is(err, domain.ErrInvalidEmailFormat):
 		respond.Error(w, http.StatusBadRequest, "Invalid email format")
@@ -27,7 +27,7 @@ func handleError(w http.ResponseWriter, err error) {
 	case errors.Is(err, service.ErrGitHubUnauthorized):
 		respond.Error(w, http.StatusBadGateway, "GitHub API token is invalid or expired")
 	default:
-		slog.Error("internal server error", "error", err.Error())
+		middleware.LoggerFromContext(r.Context()).Error("internal server error", "error", err.Error())
 		respond.Error(w, http.StatusInternalServerError, "internal server error")
 	}
 }

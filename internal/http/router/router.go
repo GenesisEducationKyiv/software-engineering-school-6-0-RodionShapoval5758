@@ -13,7 +13,7 @@ import (
 func New(handler *handler.Handler, apiKey string) http.Handler {
 	router := chi.NewRouter()
 
-	router.Use(chimiddleware.Logger)
+	router.Use(middleware.Logger)
 	router.Use(chimiddleware.Recoverer)
 
 	if apiKey != "" {
