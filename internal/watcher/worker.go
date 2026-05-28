@@ -2,6 +2,8 @@ package watcher
 
 import (
 	"context"
+	"crypto/rand"
+	"encoding/hex"
 	"errors"
 	"log/slog"
 	"sync"
@@ -80,15 +82,17 @@ func (w *Worker) runOneScan(ctx context.Context) error {
 	scanCtx, cancelScan := context.WithCancel(ctx)
 	defer cancelScan()
 
+	logger := slog.Default().With("scan_id", newScanID())
+
 	repositories, err := w.repositoryRepository.ListTracked(scanCtx)
 	if err != nil {
 		return err
 	}
 
-	slog.Info("worker loaded tracked repositories", "count", len(repositories))
+	logger.Info("worker loaded tracked repositories", "count", len(repositories))
 
 	var rateLimited atomic.Bool
-	w.processRepositories(scanCtx, cancelScan, &rateLimited, repositories)
+	w.processRepositories(scanCtx, cancelScan, &rateLimited, repositories, logger)
 
 	if rateLimited.Load() {
 		return domain.ErrRateLimited
@@ -102,6 +106,7 @@ func (w *Worker) processRepositories(
 	cancelScan context.CancelFunc,
 	rateLimited *atomic.Bool,
 	repositories []domain.Repository,
+	logger *slog.Logger,
 ) {
 	sem := make(chan struct{}, maxConcurrentRepositoryScans)
 	var wg sync.WaitGroup
@@ -118,8 +123,8 @@ func (w *Worker) processRepositories(
 			defer wg.Done()
 			defer func() { <-sem }()
 
-			if err := w.processRepository(scanCtx, r); err != nil {
-				w.handleRepositoryProcessingError(err, r, cancelScan, rateLimited)
+			if err := w.processRepository(scanCtx, r, logger); err != nil {
+				w.handleRepositoryProcessingError(err, r, cancelScan, rateLimited, logger)
 			}
 		}(repo)
 	}
@@ -132,6 +137,7 @@ func (w *Worker) handleRepositoryProcessingError(
 	repo domain.Repository,
 	cancelScan context.CancelFunc,
 	rateLimited *atomic.Bool,
+	logger *slog.Logger,
 ) {
 	if errors.Is(err, domain.ErrRateLimited) {
 		rateLimited.Store(true)
@@ -140,7 +146,7 @@ func (w *Worker) handleRepositoryProcessingError(
 		return
 	}
 
-	slog.Error(
+	logger.Error(
 		"worker repository processing failed",
 		"repository_id", repo.ID,
 		"repository", repo.FullName,
@@ -148,8 +154,8 @@ func (w *Worker) handleRepositoryProcessingError(
 	)
 }
 
-func (w *Worker) processRepository(ctx context.Context, repo domain.Repository) error {
-	release, err := w.getLatestRelease(ctx, repo)
+func (w *Worker) processRepository(ctx context.Context, repo domain.Repository, logger *slog.Logger) error {
+	release, err := w.getLatestRelease(ctx, repo, logger)
 	if err != nil {
 		return err
 	}
@@ -159,12 +165,22 @@ func (w *Worker) processRepository(ctx context.Context, repo domain.Repository) 
 	}
 
 	if !repo.HasNewRelease(release.Tag) {
-		w.logUnchangedRelease(repo, release)
+		logger.Info(
+			"worker skipped repository with unchanged release tag",
+			"repository_id", repo.ID,
+			"repository", repo.FullName,
+			"tag", release.Tag,
+		)
 
 		return nil
 	}
 
-	w.logDetectedNewRelease(repo, release)
+	logger.Info(
+		"worker detected new release",
+		"repository_id", repo.ID,
+		"repository", repo.FullName,
+		"tag", release.Tag,
+	)
 
 	if err := w.repositoryRepository.UpdateLastSeenTag(ctx, repo.ID, release.Tag); err != nil {
 		return err
@@ -173,11 +189,15 @@ func (w *Worker) processRepository(ctx context.Context, repo domain.Repository) 
 	return w.releaseNotifier.NotifyConfirmedSubscribers(ctx, repo, release)
 }
 
-func (w *Worker) getLatestRelease(ctx context.Context, repo domain.Repository) (*domain.Release, error) {
+func (w *Worker) getLatestRelease(ctx context.Context, repo domain.Repository, logger *slog.Logger) (*domain.Release, error) {
 	release, err := w.githubClient.GetLatestTag(ctx, repo.FullName)
 	if err != nil {
 		if errors.Is(err, domain.ErrNotFound) {
-			w.logRepositoryWithoutLatestRelease(repo)
+			logger.Info(
+				"worker skipped repository without latest release",
+				"repository_id", repo.ID,
+				"repository", repo.FullName,
+			)
 
 			return nil, nil
 		}
@@ -188,28 +208,9 @@ func (w *Worker) getLatestRelease(ctx context.Context, repo domain.Repository) (
 	return release, nil
 }
 
-func (w *Worker) logRepositoryWithoutLatestRelease(repo domain.Repository) {
-	slog.Info(
-		"worker skipped repository without latest release",
-		"repository_id", repo.ID,
-		"repository", repo.FullName,
-	)
-}
+func newScanID() string {
+	b := make([]byte, 8)
+	_, _ = rand.Read(b)
 
-func (w *Worker) logUnchangedRelease(repo domain.Repository, release *domain.Release) {
-	slog.Info(
-		"worker skipped repository with unchanged release tag",
-		"repository_id", repo.ID,
-		"repository", repo.FullName,
-		"tag", release.Tag,
-	)
-}
-
-func (w *Worker) logDetectedNewRelease(repo domain.Repository, release *domain.Release) {
-	slog.Info(
-		"worker detected new release",
-		"repository_id", repo.ID,
-		"repository", repo.FullName,
-		"tag", release.Tag,
-	)
+	return hex.EncodeToString(b)
 }
