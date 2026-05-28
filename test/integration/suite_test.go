@@ -11,8 +11,7 @@ import (
 	httpRouter "GithubReleaseNotificationAPI/internal/http/router"
 	"GithubReleaseNotificationAPI/internal/mail"
 	"GithubReleaseNotificationAPI/internal/service"
-	repoStore "GithubReleaseNotificationAPI/internal/store/repository"
-	subStore "GithubReleaseNotificationAPI/internal/store/subscription"
+	"GithubReleaseNotificationAPI/internal/store"
 
 	"github.com/stretchr/testify/suite"
 )
@@ -26,8 +25,8 @@ type IntegrationSuite struct {
 }
 
 func (s *IntegrationSuite) SetupSuite() {
-	subRepo := subStore.NewSubscriptionRepository(testPool)
-	repoRepo := repoStore.NewRepositoryRepository(testPool)
+	subRepo := store.NewSubscriptionRepository(testPool)
+	repoRepo := store.NewRepoRepository(testPool)
 	smtpClient := mail.NewSMTPService(smtpHost, smtpPort, "", "", "noreply@localhost", "http://localhost:8080")
 	s.githubFake = &fakeGithubClient{}
 	svc := service.NewSubscriptionService(subRepo, repoRepo, s.githubFake, smtpClient)
