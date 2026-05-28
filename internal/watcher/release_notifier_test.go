@@ -1,4 +1,4 @@
-package notifier_test
+package watcher_test
 
 import (
 	"context"
@@ -9,7 +9,7 @@ import (
 	"github.com/stretchr/testify/mock"
 )
 
-func (s *NotifierTestSuite) TestReleaseNotifier_ListError() {
+func (s *WatcherTestSuite) TestReleaseNotifier_ListError() {
 	repo := domain.Repository{ID: 1, FullName: "owner/repo"}
 	release := &domain.Release{Tag: "v1.0.0"}
 
@@ -22,7 +22,7 @@ func (s *NotifierTestSuite) TestReleaseNotifier_ListError() {
 	s.assertExpectations()
 }
 
-func (s *NotifierTestSuite) TestReleaseNotifier_NoSubscribers() {
+func (s *WatcherTestSuite) TestReleaseNotifier_NoSubscribers() {
 	repo := domain.Repository{ID: 1, FullName: "owner/repo"}
 	release := &domain.Release{Tag: "v1.0.0"}
 
@@ -35,7 +35,7 @@ func (s *NotifierTestSuite) TestReleaseNotifier_NoSubscribers() {
 	s.assertExpectations()
 }
 
-func (s *NotifierTestSuite) TestReleaseNotifier_MultipleSubscribers() {
+func (s *WatcherTestSuite) TestReleaseNotifier_MultipleSubscribers() {
 	repo := domain.Repository{ID: 1, FullName: "owner/repo"}
 	release := &domain.Release{Tag: "v1.0.0"}
 	subs := []domain.Subscription{
@@ -53,7 +53,7 @@ func (s *NotifierTestSuite) TestReleaseNotifier_MultipleSubscribers() {
 	s.assertExpectations()
 }
 
-func (s *NotifierTestSuite) TestReleaseNotifier_SMTPError_Propagates() {
+func (s *WatcherTestSuite) TestReleaseNotifier_SMTPError_Propagates() {
 	repo := domain.Repository{ID: 1, FullName: "owner/repo"}
 	release := &domain.Release{Tag: "v1.0.0"}
 	subs := []domain.Subscription{
