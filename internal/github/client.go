@@ -134,10 +134,10 @@ func determineResponse(resp *http.Response) error {
 			return domain.ErrRateLimited
 		}
 
-		return fmt.Errorf("%w: status %d", ErrUnexpectedResponse, resp.StatusCode)
+		return fmt.Errorf("%w: status %d", domain.ErrUnexpectedResponse, resp.StatusCode)
 	case http.StatusMovedPermanently:
-		return fmt.Errorf("%w: status %d", ErrUnexpectedResponse, resp.StatusCode)
+		return fmt.Errorf("%w: status %d", domain.ErrUnexpectedResponse, resp.StatusCode)
 	default:
-		return fmt.Errorf("%w: status %d", ErrUnexpectedResponse, resp.StatusCode)
+		return fmt.Errorf("%w: status %d", domain.ErrUnexpectedResponse, resp.StatusCode)
 	}
 }
