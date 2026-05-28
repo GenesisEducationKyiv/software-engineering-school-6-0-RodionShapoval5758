@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"errors"
+	"fmt"
 	"log/slog"
 	"net/http"
 	"os"
@@ -81,10 +82,10 @@ func run() error {
 
 	slog.Info("starting HTTP server", "port", cfg.Port)
 
+	serverErr := make(chan error, 1)
 	go func() {
 		if err := server.ListenAndServe(); err != nil && !errors.Is(err, http.ErrServerClosed) {
-			slog.Error("http server failed", "error", err)
-			os.Exit(1)
+			serverErr <- err
 		}
 	}()
 
@@ -100,8 +101,12 @@ func run() error {
 		}
 	}()
 
-	<-shutdownSignalCtx.Done()
-	slog.Info("shutdown signal received")
+	select {
+	case <-shutdownSignalCtx.Done():
+		slog.Info("shutdown signal received")
+	case err := <-serverErr:
+		return fmt.Errorf("http server: %w", err)
+	}
 
 	shutdownCtx, shutdownCancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer shutdownCancel()

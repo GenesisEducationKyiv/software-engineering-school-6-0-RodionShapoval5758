@@ -2,7 +2,7 @@ package respond
 
 import (
 	"encoding/json"
-	"log"
+	"log/slog"
 	"net/http"
 )
 
@@ -13,7 +13,7 @@ type ErrorResponse struct {
 func JSON(w http.ResponseWriter, statusCode int, body any) {
 	data, err := json.Marshal(body)
 	if err != nil {
-		log.Printf("Encoding to json has failed: %v", err)
+		slog.Error("encoding response to json failed", "error", err)
 		http.Error(w, "Server Error", http.StatusInternalServerError)
 
 		return
