@@ -6,7 +6,6 @@ import (
 
 	"GithubReleaseNotificationAPI/internal/domain"
 	"GithubReleaseNotificationAPI/internal/http/models"
-	"GithubReleaseNotificationAPI/internal/service"
 
 	"github.com/stretchr/testify/mock"
 )
@@ -72,7 +71,7 @@ func (s *SubscriptionHandlerTestSuite) TestListSubscriptions_ServiceErrors() {
 		err        error
 		wantStatus int
 	}{
-		{"invalid email", service.ErrInvalidEmailFormat, http.StatusBadRequest},
+		{"invalid email", domain.ErrInvalidEmailFormat, http.StatusBadRequest},
 		{"unknown error", errors.New("db down"), http.StatusInternalServerError},
 	}
 

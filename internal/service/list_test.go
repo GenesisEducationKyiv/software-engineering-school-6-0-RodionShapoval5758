@@ -5,7 +5,6 @@ import (
 	"errors"
 
 	"GithubReleaseNotificationAPI/internal/domain"
-	"GithubReleaseNotificationAPI/internal/service"
 
 	"github.com/stretchr/testify/mock"
 )
@@ -25,7 +24,7 @@ func (s *SubscriptionServiceTestSuite) TestListByEmail_InvalidEmail() {
 
 			result, err := s.svc.ListByEmail(context.Background(), tc.email)
 
-			s.ErrorIs(err, service.ErrInvalidEmailFormat)
+			s.ErrorIs(err, domain.ErrInvalidEmailFormat)
 			s.Nil(result)
 			s.assertExpectations()
 		})

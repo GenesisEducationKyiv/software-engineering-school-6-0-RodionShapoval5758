@@ -6,9 +6,7 @@ import (
 	"testing"
 
 	"GithubReleaseNotificationAPI/internal/domain"
-	gh "GithubReleaseNotificationAPI/internal/github"
 	"GithubReleaseNotificationAPI/internal/service"
-	"GithubReleaseNotificationAPI/internal/store"
 
 	"github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/suite"
@@ -63,12 +61,12 @@ func (s *SubscriptionServiceTestSuite) TestSubscribe_InvalidInput() {
 		repo    string
 		wantErr error
 	}{
-		{"empty email", "", "owner/repo", service.ErrInvalidEmailFormat},
-		{"malformed email", "not-an-email", "owner/repo", service.ErrInvalidEmailFormat},
-		{"no slash in repo", "user@example.com", "noslash", service.ErrInvalidRepoFormat},
-		{"too many slashes", "user@example.com", "a/b/c", service.ErrInvalidRepoFormat},
-		{"empty owner", "user@example.com", "/repo", service.ErrInvalidRepoFormat},
-		{"empty repo name", "user@example.com", "owner/", service.ErrInvalidRepoFormat},
+		{"empty email", "", "owner/repo", domain.ErrInvalidEmailFormat},
+		{"malformed email", "not-an-email", "owner/repo", domain.ErrInvalidEmailFormat},
+		{"no slash in repo", "user@example.com", "noslash", domain.ErrInvalidRepoFormat},
+		{"too many slashes", "user@example.com", "a/b/c", domain.ErrInvalidRepoFormat},
+		{"empty owner", "user@example.com", "/repo", domain.ErrInvalidRepoFormat},
+		{"empty repo name", "user@example.com", "owner/", domain.ErrInvalidRepoFormat},
 	}
 
 	for _, tc := range cases {
@@ -106,7 +104,7 @@ func (s *SubscriptionServiceTestSuite) TestSubscribe_NormalizesInput() {
 }
 
 func (s *SubscriptionServiceTestSuite) TestSubscribe_GithubRepoNotFound() {
-	s.github.On("CheckRepo", mock.Anything, "owner/repo").Return(gh.ErrNotFound)
+	s.github.On("CheckRepo", mock.Anything, "owner/repo").Return(domain.ErrNotFound)
 
 	err := s.svc.Subscribe(context.Background(), "user@example.com", "owner/repo")
 
@@ -115,7 +113,7 @@ func (s *SubscriptionServiceTestSuite) TestSubscribe_GithubRepoNotFound() {
 }
 
 func (s *SubscriptionServiceTestSuite) TestSubscribe_GithubRateLimited() {
-	s.github.On("CheckRepo", mock.Anything, "owner/repo").Return(gh.ErrRateLimited)
+	s.github.On("CheckRepo", mock.Anything, "owner/repo").Return(domain.ErrRateLimited)
 
 	err := s.svc.Subscribe(context.Background(), "user@example.com", "owner/repo")
 
@@ -124,7 +122,7 @@ func (s *SubscriptionServiceTestSuite) TestSubscribe_GithubRateLimited() {
 }
 
 func (s *SubscriptionServiceTestSuite) TestSubscribe_GithubUnauthorized() {
-	s.github.On("CheckRepo", mock.Anything, "owner/repo").Return(gh.ErrUnauthorized)
+	s.github.On("CheckRepo", mock.Anything, "owner/repo").Return(domain.ErrUnauthorized)
 
 	err := s.svc.Subscribe(context.Background(), "user@example.com", "owner/repo")
 
@@ -133,11 +131,11 @@ func (s *SubscriptionServiceTestSuite) TestSubscribe_GithubUnauthorized() {
 }
 
 func (s *SubscriptionServiceTestSuite) TestSubscribe_GithubUnexpectedResponse() {
-	s.github.On("CheckRepo", mock.Anything, "owner/repo").Return(gh.ErrUnexpectedResponse)
+	s.github.On("CheckRepo", mock.Anything, "owner/repo").Return(errors.New("unexpected github response"))
 
 	err := s.svc.Subscribe(context.Background(), "user@example.com", "owner/repo")
 
-	s.ErrorIs(err, gh.ErrUnexpectedResponse)
+	s.Error(err)
 	s.assertExpectations()
 }
 
@@ -176,7 +174,7 @@ func (s *SubscriptionServiceTestSuite) TestSubscribe_RepoNotInDB_Created() {
 	repo := &domain.Repository{ID: 1, FullName: "owner/repo"}
 
 	s.github.On("CheckRepo", mock.Anything, "owner/repo").Return(nil)
-	s.repoRepo.On("FindByFullName", mock.Anything, "owner/repo").Return(nil, store.ErrNotFound)
+	s.repoRepo.On("FindByFullName", mock.Anything, "owner/repo").Return(nil, domain.ErrNotFound)
 	s.repoRepo.On("Create", mock.Anything, "owner/repo").Return(repo, nil)
 
 	var capturedToken string
@@ -209,8 +207,8 @@ func (s *SubscriptionServiceTestSuite) TestSubscribe_RepoCreateRaceRecovery() {
 	repo := &domain.Repository{ID: 1, FullName: "owner/repo"}
 
 	s.github.On("CheckRepo", mock.Anything, "owner/repo").Return(nil)
-	s.repoRepo.On("FindByFullName", mock.Anything, "owner/repo").Return(nil, store.ErrNotFound).Once()
-	s.repoRepo.On("Create", mock.Anything, "owner/repo").Return(nil, store.ErrAlreadyExists)
+	s.repoRepo.On("FindByFullName", mock.Anything, "owner/repo").Return(nil, domain.ErrNotFound).Once()
+	s.repoRepo.On("Create", mock.Anything, "owner/repo").Return(nil, domain.ErrAlreadyExists)
 	s.repoRepo.On("FindByFullName", mock.Anything, "owner/repo").Return(repo, nil).Once()
 
 	var capturedToken string
@@ -231,8 +229,8 @@ func (s *SubscriptionServiceTestSuite) TestSubscribe_RepoCreateRaceRecovery() {
 
 func (s *SubscriptionServiceTestSuite) TestSubscribe_RepoCreateRaceRecoveryFails() {
 	s.github.On("CheckRepo", mock.Anything, "owner/repo").Return(nil)
-	s.repoRepo.On("FindByFullName", mock.Anything, "owner/repo").Return(nil, store.ErrNotFound).Once()
-	s.repoRepo.On("Create", mock.Anything, "owner/repo").Return(nil, store.ErrAlreadyExists)
+	s.repoRepo.On("FindByFullName", mock.Anything, "owner/repo").Return(nil, domain.ErrNotFound).Once()
+	s.repoRepo.On("Create", mock.Anything, "owner/repo").Return(nil, domain.ErrAlreadyExists)
 	s.repoRepo.On("FindByFullName", mock.Anything, "owner/repo").Return(nil, errors.New("db error")).Once()
 
 	err := s.svc.Subscribe(context.Background(), "user@example.com", "owner/repo")
@@ -243,7 +241,7 @@ func (s *SubscriptionServiceTestSuite) TestSubscribe_RepoCreateRaceRecoveryFails
 
 func (s *SubscriptionServiceTestSuite) TestSubscribe_RepoCreateDBError() {
 	s.github.On("CheckRepo", mock.Anything, "owner/repo").Return(nil)
-	s.repoRepo.On("FindByFullName", mock.Anything, "owner/repo").Return(nil, store.ErrNotFound)
+	s.repoRepo.On("FindByFullName", mock.Anything, "owner/repo").Return(nil, domain.ErrNotFound)
 	s.repoRepo.On("Create", mock.Anything, "owner/repo").Return(nil, errors.New("db error"))
 
 	err := s.svc.Subscribe(context.Background(), "user@example.com", "owner/repo")
@@ -258,7 +256,7 @@ func (s *SubscriptionServiceTestSuite) TestSubscribe_SubscriptionAlreadyExists()
 	s.github.On("CheckRepo", mock.Anything, "owner/repo").Return(nil)
 	s.repoRepo.On("FindByFullName", mock.Anything, "owner/repo").Return(repo, nil)
 	s.subRepo.On("Create", mock.Anything, validSubMatcher("user@example.com", repo.ID)).
-		Return(store.ErrAlreadyExists)
+		Return(domain.ErrAlreadyExists)
 
 	err := s.svc.Subscribe(context.Background(), "user@example.com", "owner/repo")
 
@@ -275,7 +273,7 @@ func (s *SubscriptionServiceTestSuite) TestSubscribe_TokenCollisionRetry() {
 	matcher := validSubMatcher("user@example.com", repo.ID)
 
 	var capturedToken string
-	s.subRepo.On("Create", mock.Anything, matcher).Return(store.ErrTokensAlreadyExists).Once()
+	s.subRepo.On("Create", mock.Anything, matcher).Return(domain.ErrTokenConflict).Once()
 	s.subRepo.On("Create", mock.Anything, matcher).
 		Run(func(args mock.Arguments) {
 			capturedToken = args.Get(1).(domain.Subscription).ConfirmToken
@@ -297,7 +295,7 @@ func (s *SubscriptionServiceTestSuite) TestSubscribe_TokenCollisionExhausted() {
 	s.github.On("CheckRepo", mock.Anything, "owner/repo").Return(nil)
 	s.repoRepo.On("FindByFullName", mock.Anything, "owner/repo").Return(repo, nil)
 	s.subRepo.On("Create", mock.Anything, validSubMatcher("user@example.com", repo.ID)).
-		Return(store.ErrTokensAlreadyExists).Times(5)
+		Return(domain.ErrTokenConflict).Times(5)
 
 	err := s.svc.Subscribe(context.Background(), "user@example.com", "owner/repo")
 
