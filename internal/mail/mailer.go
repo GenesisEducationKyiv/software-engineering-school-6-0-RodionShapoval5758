@@ -1,32 +1,13 @@
 package mail
 
 import (
-	"bytes"
 	"crypto/tls"
 	"errors"
 	"fmt"
-	"html/template"
 	"net/smtp"
 
 	"GithubReleaseNotificationAPI/internal/domain"
 )
-
-var confirmationTmpl = template.Must(template.New("confirmation").Parse(`
-<p>Confirm subscription to <b>{{.RepoName}}</b>:</p>
-<p>
-	<a href="{{.ConfirmLink}}" style="background-color: #2ea44f; color: white; padding: 10px 20px; text-decoration: none; border-radius: 5px; display: inline-block;">Confirm Subscription</a>
-</p>
-`))
-
-var releaseTmpl = template.Must(template.New("release").Parse(`
-<h3>New release available for <b>{{.ReleaseName}}</b></h3>
-<p><b>Tag:</b> {{.Tag}}</p>
-<p><b>Name:</b> {{.ReleaseName}}</p>
-<p><a href="{{.ReleaseURL}}" style="background-color: #0366d6; color: white; padding: 8px 16px; text-decoration: none; border-radius: 5px; display: inline-block;">View Release on GitHub</a></p>
-<p style="margin-top: 16px;">
-	<a href="{{.UnsubscribeLink}}" style="color: #6a737d; text-decoration: underline;">Unsubscribe from these notifications</a>
-</p>
-`))
 
 type SMTPService struct {
 	host       string
@@ -51,18 +32,12 @@ func NewSMTPService(host, port, user, pass, fromEmail, appBaseURL string) *SMTPS
 func (s *SMTPService) SendConfirmationEmail(toEmail, repoName, confirmToken string) error {
 	subject := fmt.Sprintf("Confirm subscription: %s", repoName)
 
-	var buf bytes.Buffer
-	if err := confirmationTmpl.Execute(&buf, struct {
-		RepoName    string
-		ConfirmLink string
-	}{
-		RepoName:    repoName,
-		ConfirmLink: fmt.Sprintf("%s/confirm/%s", s.appBaseURL, confirmToken),
-	}); err != nil {
-		return fmt.Errorf("render confirmation email: %w", err)
+	body, err := renderConfirmationEmail(repoName, fmt.Sprintf("%s/confirm/%s", s.appBaseURL, confirmToken))
+	if err != nil {
+		return err
 	}
 
-	return s.send(toEmail, subject, buf.String())
+	return s.send(toEmail, subject, body)
 }
 
 func (s *SMTPService) SendReleaseNotifications(subscriptions []domain.Subscription, release *domain.Release) error {
@@ -71,6 +46,7 @@ func (s *SMTPService) SendReleaseNotifications(subscriptions []domain.Subscripti
 	}
 
 	address := fmt.Sprintf("%s:%s", s.host, s.port)
+
 	client, err := smtp.Dial(address)
 	if err != nil {
 		return fmt.Errorf("dial smtp: %w", err)
@@ -91,11 +67,14 @@ func (s *SMTPService) SendReleaseNotifications(subscriptions []domain.Subscripti
 	}
 
 	var errs []error
+
 	for _, sub := range subscriptions {
 		if sendErr := s.sendOneViaClient(client, sub, release); sendErr != nil {
 			errs = append(errs, fmt.Errorf("notify %s: %w", sub.Email, sendErr))
+
 			if err := client.Reset(); err != nil {
 				errs = append(errs, fmt.Errorf("smtp reset failed, aborting remaining sends: %w", err))
+
 				break
 			}
 		}
@@ -107,34 +86,34 @@ func (s *SMTPService) SendReleaseNotifications(subscriptions []domain.Subscripti
 func (s *SMTPService) sendOneViaClient(client *smtp.Client, sub domain.Subscription, release *domain.Release) error {
 	subject := fmt.Sprintf("New Release for %s: %s", release.Name, release.Tag)
 
-	var buf bytes.Buffer
-	if err := releaseTmpl.Execute(&buf, struct {
-		ReleaseName     string
-		Tag             string
-		ReleaseURL      string
-		UnsubscribeLink string
-	}{
-		ReleaseName:     release.Name,
-		Tag:             release.Tag,
-		ReleaseURL:      release.URL,
-		UnsubscribeLink: fmt.Sprintf("%s/unsubscribe/%s", s.appBaseURL, sub.UnsubscribeToken),
-	}); err != nil {
-		return fmt.Errorf("render release email: %w", err)
+	body, err := renderReleaseEmail(
+		release.Name,
+		release.Tag,
+		release.URL,
+		fmt.Sprintf("%s/unsubscribe/%s", s.appBaseURL, sub.UnsubscribeToken),
+	)
+	if err != nil {
+		return err
 	}
 
-	msg := fmt.Sprintf("From: %s\r\nTo: %s\r\nSubject: %s\r\nMIME-Version: 1.0\r\nContent-Type: text/html; charset=\"UTF-8\"\r\n\r\n%s",
-		s.fromEmail, sub.Email, subject, buf.String())
+	msg := fmt.Sprintf(
+		"From: %s\r\nTo: %s\r\nSubject: %s\r\nMIME-Version: 1.0\r\nContent-Type: text/html; charset=\"UTF-8\"\r\n\r\n%s",
+		s.fromEmail, sub.Email, subject, body,
+	)
 
 	if err := client.Mail(s.fromEmail); err != nil {
 		return fmt.Errorf("MAIL FROM: %w", err)
 	}
+
 	if err := client.Rcpt(sub.Email); err != nil {
 		return fmt.Errorf("RCPT TO: %w", err)
 	}
+
 	w, err := client.Data()
 	if err != nil {
 		return fmt.Errorf("DATA: %w", err)
 	}
+
 	if _, err := w.Write([]byte(msg)); err != nil {
 		_ = w.Close()
 
@@ -150,17 +129,13 @@ func (s *SMTPService) send(toEmail, subject, body string) error {
 		auth = smtp.PlainAuth("", s.user, s.pass, s.host)
 	}
 
-	msg := fmt.Sprintf("From: %s\r\n"+
-		"To: %s\r\n"+
-		"Subject: %s\r\n"+
-		"MIME-Version: 1.0\r\n"+
-		"Content-Type: text/html; charset=\"UTF-8\"\r\n"+
-		"\r\n"+
-		"%s", s.fromEmail, toEmail, subject, body)
+	msg := fmt.Sprintf(
+		"From: %s\r\nTo: %s\r\nSubject: %s\r\nMIME-Version: 1.0\r\nContent-Type: text/html; charset=\"UTF-8\"\r\n\r\n%s",
+		s.fromEmail, toEmail, subject, body,
+	)
 
 	address := fmt.Sprintf("%s:%s", s.host, s.port)
-	err := smtp.SendMail(address, auth, s.fromEmail, []string{toEmail}, []byte(msg))
-	if err != nil {
+	if err := smtp.SendMail(address, auth, s.fromEmail, []string{toEmail}, []byte(msg)); err != nil {
 		return fmt.Errorf("send email: %w", err)
 	}
 
