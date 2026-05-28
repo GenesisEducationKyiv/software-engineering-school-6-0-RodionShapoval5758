@@ -4,6 +4,7 @@ import (
 	"errors"
 	"net/http"
 
+	"GithubReleaseNotificationAPI/internal/domain"
 	"GithubReleaseNotificationAPI/internal/service"
 
 	"github.com/stretchr/testify/mock"
@@ -87,8 +88,8 @@ func (s *SubscriptionHandlerTestSuite) TestSubscribe_ServiceErrors() {
 		err        error
 		wantStatus int
 	}{
-		{"invalid email", service.ErrInvalidEmailFormat, http.StatusBadRequest},
-		{"invalid repo", service.ErrInvalidRepoFormat, http.StatusBadRequest},
+		{"invalid email", domain.ErrInvalidEmailFormat, http.StatusBadRequest},
+		{"invalid repo", domain.ErrInvalidRepoFormat, http.StatusBadRequest},
 		{"repo not found", service.ErrRepoNotFound, http.StatusNotFound},
 		{"already exists", service.ErrSubscriptionAlreadyExists, http.StatusConflict},
 		{"rate limited", service.ErrTooMuchRequests, http.StatusTooManyRequests},

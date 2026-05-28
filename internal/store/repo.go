@@ -1,4 +1,4 @@
-package repository
+package store
 
 import (
 	"context"
@@ -6,7 +6,6 @@ import (
 	"fmt"
 
 	"GithubReleaseNotificationAPI/internal/domain"
-	"GithubReleaseNotificationAPI/internal/store"
 
 	"github.com/jackc/pgerrcode"
 	"github.com/jackc/pgx/v5"
@@ -14,25 +13,17 @@ import (
 	"github.com/jackc/pgx/v5/pgxpool"
 )
 
-type Repository interface {
-	Create(ctx context.Context, repositoryName string) (*domain.Repository, error)
-	FindByFullName(ctx context.Context, fullName string) (*domain.Repository, error)
-	UpdateLastSeenTag(ctx context.Context, repositoryID int64, tag string) error
-	DeleteByID(ctx context.Context, repositoryID int64) error
-	ListTracked(ctx context.Context) ([]domain.Repository, error)
-}
-
-type PostgresRepositoryRepository struct {
+type PostgresRepoRepository struct {
 	pool *pgxpool.Pool
 }
 
-func NewRepositoryRepository(pool *pgxpool.Pool) *PostgresRepositoryRepository {
-	return &PostgresRepositoryRepository{
+func NewRepoRepository(pool *pgxpool.Pool) *PostgresRepoRepository {
+	return &PostgresRepoRepository{
 		pool: pool,
 	}
 }
 
-func (r *PostgresRepositoryRepository) Create(ctx context.Context, repositoryName string) (*domain.Repository, error) {
+func (r *PostgresRepoRepository) Create(ctx context.Context, repositoryName string) (*domain.Repository, error) {
 	var repo domain.Repository
 
 	err := r.pool.QueryRow(ctx, createRepoQuery, repositoryName).Scan(
@@ -45,7 +36,7 @@ func (r *PostgresRepositoryRepository) Create(ctx context.Context, repositoryNam
 	if err != nil {
 		var pgerr *pgconn.PgError
 		if errors.As(err, &pgerr) && pgerr.Code == pgerrcode.UniqueViolation {
-			return nil, store.ErrAlreadyExists
+			return nil, domain.ErrAlreadyExists
 		}
 
 		return nil, fmt.Errorf("insert repository row with name %s: %w", repositoryName, err)
@@ -54,7 +45,7 @@ func (r *PostgresRepositoryRepository) Create(ctx context.Context, repositoryNam
 	return &repo, nil
 }
 
-func (r *PostgresRepositoryRepository) FindByFullName(ctx context.Context, fullName string) (*domain.Repository, error) {
+func (r *PostgresRepoRepository) FindByFullName(ctx context.Context, fullName string) (*domain.Repository, error) {
 	var repo domain.Repository
 
 	err := r.pool.QueryRow(ctx, findByNameQuery, fullName).Scan(
@@ -64,10 +55,9 @@ func (r *PostgresRepositoryRepository) FindByFullName(ctx context.Context, fullN
 		&repo.CreatedAt,
 		&repo.UpdatedAt,
 	)
-
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
-			return nil, store.ErrNotFound
+			return nil, domain.ErrNotFound
 		}
 
 		return nil, fmt.Errorf("scan repositories row by name %s: %w", fullName, err)
@@ -76,33 +66,33 @@ func (r *PostgresRepositoryRepository) FindByFullName(ctx context.Context, fullN
 	return &repo, nil
 }
 
-func (r *PostgresRepositoryRepository) UpdateLastSeenTag(ctx context.Context, repositoryID int64, lastTag string) error {
+func (r *PostgresRepoRepository) UpdateLastSeenTag(ctx context.Context, repositoryID int64, lastTag string) error {
 	tag, err := r.pool.Exec(ctx, updateLastSeenTagByIDQuery, repositoryID, lastTag)
 	if err != nil {
 		return fmt.Errorf("update last_seen_tag %s in repo with id %d: %w", lastTag, repositoryID, err)
 	}
 
 	if tag.RowsAffected() == 0 {
-		return store.ErrNotFound
+		return domain.ErrNotFound
 	}
 
 	return nil
 }
 
-func (r *PostgresRepositoryRepository) DeleteByID(ctx context.Context, repositoryID int64) error {
+func (r *PostgresRepoRepository) DeleteByID(ctx context.Context, repositoryID int64) error {
 	tag, err := r.pool.Exec(ctx, deleteByIDQuery, repositoryID)
 	if err != nil {
 		return fmt.Errorf("delete repository with id %d: %w", repositoryID, err)
 	}
 
 	if tag.RowsAffected() == 0 {
-		return store.ErrNotFound
+		return domain.ErrNotFound
 	}
 
 	return nil
 }
 
-func (r *PostgresRepositoryRepository) ListTracked(ctx context.Context) ([]domain.Repository, error) {
+func (r *PostgresRepoRepository) ListTracked(ctx context.Context) ([]domain.Repository, error) {
 	rows, err := r.pool.Query(ctx, listTrackedReposQuery)
 	if err != nil {
 		return nil, fmt.Errorf("query tracked repositories: %w", err)

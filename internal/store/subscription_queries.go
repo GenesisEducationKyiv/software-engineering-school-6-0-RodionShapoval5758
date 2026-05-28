@@ -1,4 +1,4 @@
-package subscription
+package store
 
 const createSubscriptionQuery = `
 	INSERT INTO subscriptions (

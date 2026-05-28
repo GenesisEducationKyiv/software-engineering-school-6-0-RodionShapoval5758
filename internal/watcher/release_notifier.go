@@ -1,4 +1,4 @@
-package notifier
+package watcher
 
 import (
 	"context"
@@ -42,12 +42,9 @@ func (n *ReleaseNotifier) NotifyConfirmedSubscribers(
 
 	slog.Info(
 		"worker loaded confirmed subscriptions",
-		"repository_id",
-		repo.ID,
-		"repository",
-		repo.FullName,
-		"count",
-		len(subscriptions),
+		"repository_id", repo.ID,
+		"repository", repo.FullName,
+		"count", len(subscriptions),
 	)
 
 	if len(subscriptions) == 0 {

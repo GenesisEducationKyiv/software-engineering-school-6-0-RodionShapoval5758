@@ -6,6 +6,8 @@ import (
 	"net/http/httptest"
 	"testing"
 
+	"GithubReleaseNotificationAPI/internal/domain"
+
 	"github.com/stretchr/testify/require"
 )
 
@@ -27,7 +29,7 @@ func TestCheckRepoNotFound(t *testing.T) {
 	defer closeServer()
 
 	err := client.CheckRepo(context.Background(), "golang/go")
-	require.ErrorIs(t, err, ErrNotFound)
+	require.ErrorIs(t, err, domain.ErrNotFound)
 }
 
 func TestCheckRepoRateLimited(t *testing.T) {
@@ -52,7 +54,7 @@ func TestCheckRepoRateLimited(t *testing.T) {
 			defer closeServer()
 
 			err := client.CheckRepo(context.Background(), "golang/go")
-			require.ErrorIs(t, err, ErrRateLimited)
+			require.ErrorIs(t, err, domain.ErrRateLimited)
 		})
 	}
 }
@@ -64,7 +66,7 @@ func TestCheckRepoUnauthorized(t *testing.T) {
 	defer closeServer()
 
 	err := client.CheckRepo(context.Background(), "golang/go")
-	require.ErrorIs(t, err, ErrUnauthorized)
+	require.ErrorIs(t, err, domain.ErrUnauthorized)
 }
 
 func TestGetLatestTagOK(t *testing.T) {

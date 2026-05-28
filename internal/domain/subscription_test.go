@@ -10,8 +10,8 @@ import (
 
 func TestGenerateToken(t *testing.T) {
 	tests := []struct {
-		name    string
-		length  int
+		name   string
+		length int
 	}{
 		{"length 16", 16},
 		{"length 32", 32},

@@ -16,39 +16,42 @@ import (
 	httpHandler "GithubReleaseNotificationAPI/internal/http/handler"
 	httpRouter "GithubReleaseNotificationAPI/internal/http/router"
 	"GithubReleaseNotificationAPI/internal/mail"
-	"GithubReleaseNotificationAPI/internal/notifier"
 	"GithubReleaseNotificationAPI/internal/service"
-	"GithubReleaseNotificationAPI/internal/store/repository"
-	"GithubReleaseNotificationAPI/internal/store/subscription"
+	"GithubReleaseNotificationAPI/internal/store"
+	"GithubReleaseNotificationAPI/internal/watcher"
 )
 
 func main() {
 	logger := slog.New(slog.NewJSONHandler(os.Stdout, nil))
 	slog.SetDefault(logger)
 
+	if err := run(); err != nil {
+		slog.Error("fatal error", "error", err)
+		os.Exit(1)
+	}
+}
+
+func run() error {
 	cfg, err := config.Load()
 	if err != nil {
-		slog.Error("Failed to load env variables", "error", err)
-		os.Exit(1)
+		return err
 	}
 
 	if err := db.RunMigrations(cfg.DatabaseURL); err != nil {
-		slog.Error("Failed to run migrations", "error", err)
-		os.Exit(1)
+		return err
 	}
 
-	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-	defer cancel()
+	initCtx, cancelInit := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancelInit()
 
-	dbPool, err := db.NewPool(ctx, cfg.DatabaseURL)
+	dbPool, err := db.NewPool(initCtx, cfg.DatabaseURL)
 	if err != nil {
-		slog.Error("Pool creation error", "error", err)
-		os.Exit(1)
+		return err
 	}
 	defer dbPool.Close()
 
-	subscriptionRepository := subscription.NewSubscriptionRepository(dbPool)
-	repositoryRepository := repository.NewRepositoryRepository(dbPool)
+	subscriptionRepository := store.NewSubscriptionRepository(dbPool)
+	repositoryRepository := store.NewRepoRepository(dbPool)
 
 	githubClient := github.NewGithubClient(http.DefaultClient, &cfg.GithubToken)
 
@@ -88,20 +91,11 @@ func main() {
 	shutdownSignalCtx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
 
-	releaseNotifier := notifier.NewReleaseNotifier(
-		smtpClient,
-		subscriptionRepository,
-	)
-
-	worker := notifier.NewWorker(
-		githubClient,
-		repositoryRepository,
-		releaseNotifier,
-	)
+	releaseNotifier := watcher.NewReleaseNotifier(smtpClient, subscriptionRepository)
+	worker := watcher.NewWorker(githubClient, repositoryRepository, releaseNotifier)
 
 	go func() {
-		err := worker.Start(shutdownSignalCtx, time.Second*25)
-		if err != nil {
+		if err := worker.Start(shutdownSignalCtx, 25*time.Second); err != nil {
 			slog.Error("worker failed", "error", err)
 		}
 	}()
@@ -113,9 +107,10 @@ func main() {
 	defer shutdownCancel()
 
 	if err := server.Shutdown(shutdownCtx); err != nil {
-		slog.Error("graceful shutdown failed", "error", err)
-		os.Exit(1)
+		return err
 	}
 
 	slog.Info("http server stopped")
+
+	return nil
 }

@@ -9,7 +9,7 @@ import (
 
 	"GithubReleaseNotificationAPI/internal/domain"
 	"GithubReleaseNotificationAPI/internal/http/models"
-	"GithubReleaseNotificationAPI/internal/http/util"
+	"GithubReleaseNotificationAPI/internal/http/respond"
 
 	"github.com/go-chi/chi/v5"
 )
@@ -34,13 +34,13 @@ func New(subscriptionService subscriptionService) *Handler {
 func (h *Handler) Subscribe(w http.ResponseWriter, r *http.Request) {
 	req, err := decodeSubscriptionRequest(r)
 	if err != nil {
-		util.WriteErrorResponse(w, http.StatusBadRequest, err.Error())
+		respond.Error(w, http.StatusBadRequest, err.Error())
 
 		return
 	}
 
 	if err := requireNonEmptySubscriptionFields(req.Email, req.Repo); err != nil {
-		util.WriteErrorResponse(w, http.StatusBadRequest, err.Error())
+		respond.Error(w, http.StatusBadRequest, err.Error())
 
 		return
 	}
@@ -51,7 +51,7 @@ func (h *Handler) Subscribe(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	util.WriteJSONResponse(w, http.StatusOK, map[string]string{
+	respond.JSON(w, http.StatusOK, map[string]string{
 		"message": "Subscription successful. Confirmation email sent",
 	})
 }
@@ -60,38 +60,38 @@ func (h *Handler) Confirm(w http.ResponseWriter, r *http.Request) {
 	token := chi.URLParam(r, "token")
 
 	if err := requireToken(token, 1); err != nil {
-		util.WriteErrorResponse(w, http.StatusBadRequest, err.Error())
+		respond.Error(w, http.StatusBadRequest, err.Error())
 
 		return
 	}
 
-	err := h.subscriptionService.Confirm(r.Context(), token)
-	if err != nil {
+	if err := h.subscriptionService.Confirm(r.Context(), token); err != nil {
 		handleError(w, err)
 
 		return
 	}
 
-	util.WriteJSONResponse(w, http.StatusOK, map[string]string{
-		"message": "Subscription confirmed successfully"})
+	respond.JSON(w, http.StatusOK, map[string]string{
+		"message": "Subscription confirmed successfully",
+	})
 }
 
 func (h *Handler) Unsubscribe(w http.ResponseWriter, r *http.Request) {
 	token := chi.URLParam(r, "token")
 
 	if err := requireToken(token, 8); err != nil {
-		util.WriteErrorResponse(w, http.StatusBadRequest, err.Error())
+		respond.Error(w, http.StatusBadRequest, err.Error())
 
 		return
 	}
 
-	err := h.subscriptionService.Unsubscribe(r.Context(), token)
-	if err != nil {
+	if err := h.subscriptionService.Unsubscribe(r.Context(), token); err != nil {
 		handleError(w, err)
 
 		return
 	}
-	util.WriteJSONResponse(w, http.StatusOK, map[string]string{
+
+	respond.JSON(w, http.StatusOK, map[string]string{
 		"message": "Unsubscribed successfully",
 	})
 }
@@ -100,7 +100,7 @@ func (h *Handler) ListSubscriptions(w http.ResponseWriter, r *http.Request) {
 	email := r.URL.Query().Get("email")
 
 	if err := requireNonEmptyEmail(email); err != nil {
-		util.WriteErrorResponse(w, http.StatusBadRequest, err.Error())
+		respond.Error(w, http.StatusBadRequest, err.Error())
 
 		return
 	}
@@ -112,7 +112,7 @@ func (h *Handler) ListSubscriptions(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	util.WriteJSONResponse(w, http.StatusOK, models.ConvertToResponseModel(subscriptions))
+	respond.JSON(w, http.StatusOK, models.ConvertToResponseModel(subscriptions))
 }
 
 func (h *Handler) ValidateAPIKey(writer http.ResponseWriter, request *http.Request) {
@@ -141,7 +141,7 @@ func decodeSubscriptionRequest(r *http.Request) (models.SubscriptionRequest, err
 	}, nil
 }
 
-func requireNonEmptySubscriptionFields(email string, repo string) error {
+func requireNonEmptySubscriptionFields(email, repo string) error {
 	if email == "" {
 		return errors.New("email is empty")
 	}

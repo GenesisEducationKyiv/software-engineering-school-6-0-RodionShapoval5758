@@ -5,28 +5,29 @@ import (
 	"log/slog"
 	"net/http"
 
-	"GithubReleaseNotificationAPI/internal/http/util"
+	"GithubReleaseNotificationAPI/internal/domain"
+	"GithubReleaseNotificationAPI/internal/http/respond"
 	"GithubReleaseNotificationAPI/internal/service"
 )
 
 func handleError(w http.ResponseWriter, err error) {
 	switch {
-	case errors.Is(err, service.ErrInvalidEmailFormat):
-		util.WriteErrorResponse(w, http.StatusBadRequest, "Invalid email format")
-	case errors.Is(err, service.ErrInvalidRepoFormat):
-		util.WriteErrorResponse(w, http.StatusBadRequest, "Invalid repo format")
+	case errors.Is(err, domain.ErrInvalidEmailFormat):
+		respond.Error(w, http.StatusBadRequest, "Invalid email format")
+	case errors.Is(err, domain.ErrInvalidRepoFormat):
+		respond.Error(w, http.StatusBadRequest, "Invalid repo format")
 	case errors.Is(err, service.ErrTokenNotFound):
-		util.WriteErrorResponse(w, http.StatusNotFound, "Token not found")
+		respond.Error(w, http.StatusNotFound, "Token not found")
 	case errors.Is(err, service.ErrRepoNotFound):
-		util.WriteErrorResponse(w, http.StatusNotFound, "Repository not found on GitHub")
+		respond.Error(w, http.StatusNotFound, "Repository not found on GitHub")
 	case errors.Is(err, service.ErrSubscriptionAlreadyExists):
-		util.WriteErrorResponse(w, http.StatusConflict, "Email already subscribed to this repository")
+		respond.Error(w, http.StatusConflict, "Email already subscribed to this repository")
 	case errors.Is(err, service.ErrTooMuchRequests):
-		util.WriteErrorResponse(w, http.StatusTooManyRequests, "Github API request limit is hit")
+		respond.Error(w, http.StatusTooManyRequests, "Github API request limit is hit")
 	case errors.Is(err, service.ErrGitHubUnauthorized):
-		util.WriteErrorResponse(w, http.StatusBadGateway, "GitHub API token is invalid or expired")
+		respond.Error(w, http.StatusBadGateway, "GitHub API token is invalid or expired")
 	default:
 		slog.Error("internal server error", "error", err.Error())
-		util.WriteErrorResponse(w, http.StatusInternalServerError, "internal server error")
+		respond.Error(w, http.StatusInternalServerError, "internal server error")
 	}
 }
