@@ -126,12 +126,12 @@ func determineResponse(resp *http.Response) error {
 	case http.StatusOK:
 		return nil
 	case http.StatusNotFound:
-		return ErrNotFound
+		return domain.ErrNotFound
 	case http.StatusUnauthorized:
-		return ErrUnauthorized
+		return domain.ErrUnauthorized
 	case http.StatusForbidden, http.StatusTooManyRequests:
 		if resp.Header.Get("X-Ratelimit-Remaining") == "0" || resp.Header.Get("Retry-After") != "" {
-			return ErrRateLimited
+			return domain.ErrRateLimited
 		}
 
 		return fmt.Errorf("%w: status %d", ErrUnexpectedResponse, resp.StatusCode)
