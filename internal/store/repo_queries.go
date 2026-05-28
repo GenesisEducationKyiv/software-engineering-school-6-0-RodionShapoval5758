@@ -1,4 +1,4 @@
-package repository
+package store
 
 const createRepoQuery = `
 	INSERT INTO repositories (name)
