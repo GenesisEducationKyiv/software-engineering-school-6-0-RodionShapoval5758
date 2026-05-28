@@ -4,21 +4,21 @@ import (
 	"net/http"
 
 	"GithubReleaseNotificationAPI/internal/http/handler"
-	"GithubReleaseNotificationAPI/internal/http/middlewaref"
+	"GithubReleaseNotificationAPI/internal/http/middleware"
 
 	"github.com/go-chi/chi/v5"
-	"github.com/go-chi/chi/v5/middleware"
+	chimiddleware "github.com/go-chi/chi/v5/middleware"
 )
 
 func New(handler *handler.Handler, apiKey string) http.Handler {
 	router := chi.NewRouter()
 
-	router.Use(middleware.Logger)
-	router.Use(middleware.Recoverer)
+	router.Use(chimiddleware.Logger)
+	router.Use(chimiddleware.Recoverer)
 
 	if apiKey != "" {
 		router.Route("/api", func(r chi.Router) {
-			r.Use(middlewaref.AuthAPIKEY(apiKey))
+			r.Use(middleware.AuthAPIKEY(apiKey))
 			r.Post("/subscribe", handler.Subscribe)
 			r.Get("/subscriptions", handler.ListSubscriptions)
 			r.Get("/validate", handler.ValidateAPIKey)
