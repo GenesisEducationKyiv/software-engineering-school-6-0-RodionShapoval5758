@@ -16,9 +16,9 @@ import (
 	httpHandler "GithubReleaseNotificationAPI/internal/http/handler"
 	httpRouter "GithubReleaseNotificationAPI/internal/http/router"
 	"GithubReleaseNotificationAPI/internal/mail"
-	"GithubReleaseNotificationAPI/internal/watcher"
 	"GithubReleaseNotificationAPI/internal/service"
 	"GithubReleaseNotificationAPI/internal/store"
+	"GithubReleaseNotificationAPI/internal/watcher"
 )
 
 func main() {
