@@ -36,11 +36,20 @@ func TestLoadValidation(t *testing.T) {
 			wantErr: ErrMissingDatabaseURL,
 		},
 		{
-			name: "invalid port",
+			name: "invalid port format",
 			env: map[string]string{
 				"DATABASE_URL": "postgres://user:pass@localhost:5432/app",
 				"SMTP_HOST":    "localhost",
 				"PORT":         "bad-port",
+			},
+			wantErr: ErrInvalidPortFormat,
+		},
+		{
+			name: "invalid port range",
+			env: map[string]string{
+				"DATABASE_URL": "postgres://user:pass@localhost:5432/app",
+				"SMTP_HOST":    "localhost",
+				"PORT":         "99999",
 			},
 			wantErr: ErrInvalidPort,
 		},
@@ -61,7 +70,16 @@ func TestLoadValidation(t *testing.T) {
 			wantErr: ErrMissingSMTPHost,
 		},
 		{
-			name: "invalid smtp port",
+			name: "invalid smtp port format",
+			env: map[string]string{
+				"DATABASE_URL": "postgres://user:pass@localhost:5432/app",
+				"SMTP_HOST":    "localhost",
+				"SMTP_PORT":    "bad-port",
+			},
+			wantErr: ErrInvalidSMTPPortFormat,
+		},
+		{
+			name: "invalid smtp port range",
 			env: map[string]string{
 				"DATABASE_URL": "postgres://user:pass@localhost:5432/app",
 				"SMTP_HOST":    "localhost",

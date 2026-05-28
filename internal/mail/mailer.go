@@ -94,7 +94,10 @@ func (s *SMTPService) SendReleaseNotifications(subscriptions []domain.Subscripti
 	for _, sub := range subscriptions {
 		if sendErr := s.sendOneViaClient(client, sub, release); sendErr != nil {
 			errs = append(errs, fmt.Errorf("notify %s: %w", sub.Email, sendErr))
-			client.Reset() //nolint:errcheck
+			if err := client.Reset(); err != nil {
+				errs = append(errs, fmt.Errorf("smtp reset failed, aborting remaining sends: %w", err))
+				break
+			}
 		}
 	}
 

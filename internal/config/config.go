@@ -11,10 +11,12 @@ import (
 
 var (
 	ErrMissingDatabaseURL     = errors.New("DATABASE_URL is required")
-	ErrInvalidPort            = errors.New("PORT must be a valid TCP port")
+	ErrInvalidPortFormat      = errors.New("PORT must be a valid integer")
+	ErrInvalidPort            = errors.New("PORT must be a valid TCP port (1-65535)")
 	ErrInvalidMainURL         = errors.New("MAIN_URL must be a valid absolute URL")
 	ErrMissingSMTPHost        = errors.New("SMTP_HOST is required")
-	ErrInvalidSMTPPort        = errors.New("SMTP_PORT must be a valid TCP port")
+	ErrInvalidSMTPPortFormat  = errors.New("SMTP_PORT must be a valid integer")
+	ErrInvalidSMTPPort        = errors.New("SMTP_PORT must be a valid TCP port (1-65535)")
 	ErrInvalidSMTPCredentials = errors.New("SMTP_USER and SMTP_PASSWORD must be configured together")
 )
 
@@ -83,7 +85,10 @@ func (cfg *Config) validate() error {
 	}
 
 	port, err := strconv.Atoi(cfg.Port)
-	if err != nil || port <= 0 || port > 65535 {
+	if err != nil {
+		return ErrInvalidPortFormat
+	}
+	if port <= 0 || port > 65535 {
 		return ErrInvalidPort
 	}
 
@@ -99,7 +104,10 @@ func (cfg *Config) validate() error {
 	}
 
 	smtpPort, err := strconv.Atoi(cfg.SMTPPort)
-	if err != nil || smtpPort <= 0 || smtpPort > 65535 {
+	if err != nil {
+		return ErrInvalidSMTPPortFormat
+	}
+	if smtpPort <= 0 || smtpPort > 65535 {
 		return ErrInvalidSMTPPort
 	}
 
