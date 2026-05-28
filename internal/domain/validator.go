@@ -1,11 +1,11 @@
-package service
+package domain
 
 import (
 	"net/mail"
 	"strings"
 )
 
-func validateEmailFormat(email string) error {
+func ValidateEmail(email string) error {
 	_, err := mail.ParseAddress(email)
 	if err != nil {
 		return ErrInvalidEmailFormat
@@ -14,7 +14,7 @@ func validateEmailFormat(email string) error {
 	return nil
 }
 
-func validateRepoFormat(repo string) error {
+func ValidateRepo(repo string) error {
 	parts := strings.Split(repo, "/")
 
 	if len(parts) != 2 {
