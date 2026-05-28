@@ -1,4 +1,4 @@
-package util
+package respond
 
 import (
 	"encoding/json"
@@ -10,8 +10,8 @@ type ErrorResponse struct {
 	ErrorMessage string `json:"error"`
 }
 
-func WriteJSONResponse(w http.ResponseWriter, statusCode int, t any) {
-	data, err := json.Marshal(t)
+func JSON(w http.ResponseWriter, statusCode int, body any) {
+	data, err := json.Marshal(body)
 	if err != nil {
 		log.Printf("Encoding to json has failed: %v", err)
 		http.Error(w, "Server Error", http.StatusInternalServerError)
@@ -24,6 +24,6 @@ func WriteJSONResponse(w http.ResponseWriter, statusCode int, t any) {
 	_, _ = w.Write(data)
 }
 
-func WriteErrorResponse(w http.ResponseWriter, statusCode int, err string) {
-	WriteJSONResponse(w, statusCode, ErrorResponse{ErrorMessage: err})
+func Error(w http.ResponseWriter, statusCode int, msg string) {
+	JSON(w, statusCode, ErrorResponse{ErrorMessage: msg})
 }

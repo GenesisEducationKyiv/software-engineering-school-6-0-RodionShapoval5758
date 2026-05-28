@@ -8,8 +8,8 @@ import (
 	"testing"
 
 	"GithubReleaseNotificationAPI/internal/http/handler"
+	"GithubReleaseNotificationAPI/internal/http/respond"
 	"GithubReleaseNotificationAPI/internal/http/router"
-	"GithubReleaseNotificationAPI/internal/http/util"
 
 	"github.com/stretchr/testify/suite"
 )
@@ -42,10 +42,10 @@ func (s *SubscriptionHandlerTestSuite) performRequest(method, target, body, cont
 	return rec
 }
 
-func (s *SubscriptionHandlerTestSuite) requireErrorResponse(rec *httptest.ResponseRecorder, status int) util.ErrorResponse {
+func (s *SubscriptionHandlerTestSuite) requireErrorResponse(rec *httptest.ResponseRecorder, status int) respond.ErrorResponse {
 	s.Equal(status, rec.Code)
 
-	var response util.ErrorResponse
+	var response respond.ErrorResponse
 	s.Require().NoError(json.Unmarshal(rec.Body.Bytes(), &response))
 	s.NotEmpty(response.ErrorMessage)
 
