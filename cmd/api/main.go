@@ -23,7 +23,15 @@ import (
 )
 
 func main() {
-	logger := slog.New(slog.NewJSONHandler(os.Stdout, nil))
+	logger := slog.New(slog.NewJSONHandler(os.Stdout, &slog.HandlerOptions{
+		ReplaceAttr: func(groups []string, a slog.Attr) slog.Attr {
+			if a.Key == slog.MessageKey {
+				a.Key = "message"
+			}
+			return a
+		},
+	})).With(
+		slog.Group("service", slog.String("name", "github-release-notification-api")))
 	slog.SetDefault(logger)
 
 	if err := run(); err != nil {
