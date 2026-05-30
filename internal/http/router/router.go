@@ -5,16 +5,20 @@ import (
 
 	"GithubReleaseNotificationAPI/internal/http/handler"
 	"GithubReleaseNotificationAPI/internal/http/middleware"
+	"GithubReleaseNotificationAPI/internal/metrics"
 
 	"github.com/go-chi/chi/v5"
 	chimiddleware "github.com/go-chi/chi/v5/middleware"
 )
 
-func New(handler *handler.Handler, apiKey string) http.Handler {
+func New(handler *handler.Handler, apiKey string, m *metrics.Metrics) http.Handler {
 	router := chi.NewRouter()
 
 	router.Use(middleware.Logger)
+	router.Use(middleware.MetricsMiddleware(m))
 	router.Use(chimiddleware.Recoverer)
+
+	router.Handle("/metrics", m.Handler())
 
 	if apiKey != "" {
 		router.Route("/api", func(r chi.Router) {
