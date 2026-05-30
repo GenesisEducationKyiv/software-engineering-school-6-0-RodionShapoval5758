@@ -10,7 +10,7 @@ processors:
       when:
         not:
           equals:
-            docker.container.labels.filebeat_collect: "true"
+            container.labels.filebeat_collect: "true"
   - decode_json_fields:
       fields: ["message"]
       target: ""
