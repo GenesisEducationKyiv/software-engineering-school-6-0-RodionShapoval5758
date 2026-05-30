@@ -17,9 +17,12 @@ import (
 	httpHandler "GithubReleaseNotificationAPI/internal/http/handler"
 	httpRouter "GithubReleaseNotificationAPI/internal/http/router"
 	"GithubReleaseNotificationAPI/internal/mail"
+	"GithubReleaseNotificationAPI/internal/metrics"
 	"GithubReleaseNotificationAPI/internal/service"
 	"GithubReleaseNotificationAPI/internal/store"
 	"GithubReleaseNotificationAPI/internal/watcher"
+
+	"github.com/prometheus/client_golang/prometheus"
 )
 
 func main() {
@@ -80,8 +83,11 @@ func run() error {
 		smtpClient,
 	)
 
+	reg := prometheus.NewRegistry()
+	appMetrics := metrics.New(reg)
+
 	handler := httpHandler.New(subscriptionService)
-	router := httpRouter.New(handler, cfg.ApiKey)
+	router := httpRouter.New(handler, cfg.ApiKey, appMetrics)
 
 	server := &http.Server{
 		Addr:    ":" + cfg.Port,
