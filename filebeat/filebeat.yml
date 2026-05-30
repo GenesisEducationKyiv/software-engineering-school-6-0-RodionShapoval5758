@@ -1,0 +1,32 @@
+filebeat.inputs:
+  - type: container
+    paths:
+      - /var/lib/docker/containers/*/*.log
+
+processors:
+  - add_docker_metadata:
+      host: "unix:///var/run/docker.sock"
+  - drop_event:
+      when:
+        not:
+          equals:
+            docker.container.labels.filebeat_collect: "true"
+  - decode_json_fields:
+      fields: ["message"]
+      target: ""
+      overwrite_keys: true
+
+output.elasticsearch:
+  hosts: ["http://elasticsearch:9200"]
+  index: "app-logs-%{+yyyy.MM.dd}"
+
+setup.ilm.enabled: false
+
+setup.template.name: "app-logs"
+setup.template.pattern: "app-logs-*"
+setup.template.overwrite: true
+
+setup.kibana:
+  host: "kibana:5601"
+
+logging.level: info
