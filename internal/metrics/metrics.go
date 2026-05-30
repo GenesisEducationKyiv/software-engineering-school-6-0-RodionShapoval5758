@@ -7,14 +7,12 @@ import (
 	"github.com/prometheus/client_golang/prometheus/promhttp"
 )
 
-
 type Metrics struct {
 	HTTPRequestsTotal   *prometheus.CounterVec
 	HTTPRequestDuration *prometheus.HistogramVec
 
 	reg *prometheus.Registry
 }
-
 
 func New(reg *prometheus.Registry) *Metrics {
 	m := &Metrics{
