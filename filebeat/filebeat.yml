@@ -22,9 +22,7 @@ output.elasticsearch:
 
 setup.ilm.enabled: false
 
-setup.template.name: "app-logs"
-setup.template.pattern: "app-logs-*"
-setup.template.overwrite: true
+setup.template.enabled: false
 
 setup.kibana:
   host: "kibana:5601"
