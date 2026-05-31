@@ -13,5 +13,5 @@ RUN apt-get update && apt-get install -y ca-certificates && rm -rf /var/lib/apt/
 COPY --from=builder /app/api ./api
 COPY --from=builder /app/migrations ./migrations
 
-EXPOSE 2433
+EXPOSE 8080
 CMD ["./api"]
