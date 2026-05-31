@@ -2,8 +2,6 @@ package watcher
 
 import (
 	"context"
-	"crypto/rand"
-	"encoding/hex"
 	"errors"
 	"log/slog"
 	"sync"
@@ -11,7 +9,13 @@ import (
 	"time"
 
 	"GithubReleaseNotificationAPI/internal/domain"
+	"GithubReleaseNotificationAPI/internal/idgen"
 )
+
+type scanObserver interface {
+	ObserveScanDuration(seconds float64)
+	IncScanResult(result string)
+}
 
 type githubClient interface {
 	GetLatestTag(ctx context.Context, fullName string) (*domain.Release, error)
@@ -30,6 +34,7 @@ type Worker struct {
 	githubClient         githubClient
 	repositoryRepository repositoryRepository
 	releaseNotifier      releaseNotifier
+	metrics              scanObserver
 }
 
 const maxConcurrentRepositoryScans = 10
@@ -38,11 +43,13 @@ func NewWorker(
 	githubClient githubClient,
 	repositoryRepository repositoryRepository,
 	releaseNotifier releaseNotifier,
+	metrics scanObserver,
 ) *Worker {
 	return &Worker{
 		githubClient:         githubClient,
 		repositoryRepository: repositoryRepository,
 		releaseNotifier:      releaseNotifier,
+		metrics:              metrics,
 	}
 }
 
@@ -79,13 +86,19 @@ func (w *Worker) handleScanError(err error) {
 }
 
 func (w *Worker) runOneScan(ctx context.Context) error {
+	start := time.Now()
+
 	scanCtx, cancelScan := context.WithCancel(ctx)
 	defer cancelScan()
 
-	logger := slog.Default().With("scan_id", newScanID())
+	logger := slog.Default().With("scan_id", idgen.New())
 
 	repositories, err := w.repositoryRepository.ListTracked(scanCtx)
 	if err != nil {
+		if errors.Is(err, context.Canceled) {
+			return nil
+		}
+		w.observeScan(time.Since(start), "error")
 		return err
 	}
 
@@ -95,10 +108,21 @@ func (w *Worker) runOneScan(ctx context.Context) error {
 	w.processRepositories(scanCtx, cancelScan, &rateLimited, repositories, logger)
 
 	if rateLimited.Load() {
+		w.observeScan(time.Since(start), "rate_limited")
 		return domain.ErrRateLimited
 	}
 
+	w.observeScan(time.Since(start), "ok")
+
 	return nil
+}
+
+func (w *Worker) observeScan(d time.Duration, result string) {
+	if w.metrics == nil {
+		return
+	}
+	w.metrics.ObserveScanDuration(d.Seconds())
+	w.metrics.IncScanResult(result)
 }
 
 func (w *Worker) processRepositories(
@@ -155,6 +179,10 @@ func (w *Worker) handleRepositoryProcessingError(
 }
 
 func (w *Worker) processRepository(ctx context.Context, repo domain.Repository, logger *slog.Logger) error {
+	if logger == nil {
+		logger = slog.Default()
+	}
+
 	release, err := w.getLatestRelease(ctx, repo, logger)
 	if err != nil {
 		return err
@@ -206,11 +234,4 @@ func (w *Worker) getLatestRelease(ctx context.Context, repo domain.Repository, l
 	}
 
 	return release, nil
-}
-
-func newScanID() string {
-	b := make([]byte, 8)
-	_, _ = rand.Read(b)
-
-	return hex.EncodeToString(b)
 }
