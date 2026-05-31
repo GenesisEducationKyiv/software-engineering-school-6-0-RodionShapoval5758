@@ -38,8 +38,6 @@ services:
       POSTGRES_USER: postgres
       POSTGRES_PASSWORD: password
       POSTGRES_DB: github_release_notifications
-    ports:
-      - "5432:5432"
     volumes:
       - postgres_data:/var/lib/postgresql/data
       - ./db/init:/docker-entrypoint-initdb.d
@@ -55,7 +53,6 @@ services:
     restart: unless-stopped
     ports:
       - "8025:8025"
-      - "1025:1025"
     environment:
       MP_MAX_MESSAGES: 5000
       MP_SMTP_AUTH_ACCEPT_ANY: 1
@@ -68,8 +65,6 @@ services:
       - discovery.type=single-node
       - xpack.security.enabled=false
       - ES_JAVA_OPTS=-Xms512m -Xmx512m
-    ports:
-      - "9200:9200"
     volumes:
       - elasticsearch_data:/usr/share/elasticsearch/data
     healthcheck:
@@ -108,8 +103,6 @@ services:
     container_name: github-release-notification-prometheus
     volumes:
       - ./prometheus/prometheus.yml:/etc/prometheus/prometheus.yml:ro
-    ports:
-      - "9090:9090"
     depends_on:
       - app
 
