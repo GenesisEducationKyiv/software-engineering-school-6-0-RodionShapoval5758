@@ -85,7 +85,6 @@ func run() error {
 
 	reg := prometheus.NewRegistry()
 	appMetrics := metrics.New(reg)
-
 	handler := httpHandler.New(subscriptionService)
 	router := httpRouter.New(handler, cfg.ApiKey, appMetrics)
 
@@ -106,8 +105,9 @@ func run() error {
 	shutdownSignalCtx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
 
+	go appMetrics.CollectDBStats(shutdownSignalCtx, dbPool, 15*time.Second)
 	releaseNotifier := watcher.NewReleaseNotifier(smtpClient, subscriptionRepository)
-	worker := watcher.NewWorker(githubClient, repositoryRepository, releaseNotifier)
+	worker := watcher.NewWorker(githubClient, repositoryRepository, releaseNotifier, appMetrics)
 
 	go func() {
 		if err := worker.Start(shutdownSignalCtx, 25*time.Second); err != nil {
