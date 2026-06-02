@@ -1,6 +1,6 @@
 .PHONY: build up down down-all up-metrics up-logging up-full observability-setup \
         test test-integration test-e2e lint lint-fix format format-check \
-        k6-smoke k6-load k6-stress k6-spike k6-soak k6-breakpoint k6-write k6-journey k6-suite k6-clean
+        k6-smoke k6-smoke-ci k6-load k6-stress k6-spike k6-soak k6-breakpoint k6-write k6-journey k6-suite k6-clean
 
 build:
 	docker compose up --build -d
@@ -61,6 +61,9 @@ endef
 
 k6-smoke:
 	$(call run_k6,smoke,k6/smoke.js)
+
+k6-smoke-ci:
+	k6 run -e BASE_URL=$(K6_BASE_URL) -e API_KEY=$(K6_API_KEY) k6/smoke.js
 
 k6-load:
 	$(call run_k6,read-load,k6/read-load.js)

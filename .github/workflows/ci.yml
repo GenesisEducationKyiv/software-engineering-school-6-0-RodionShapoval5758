@@ -70,6 +70,27 @@ jobs:
         if: always()
         run: docker compose down -v
 
+  smoke-test:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repo
+        uses: actions/checkout@v6
+      - name: Install k6
+        run: |
+          sudo gpg --no-default-keyring --keyring /usr/share/keyrings/k6-archive-keyring.gpg \
+            --keyserver hkp://keyserver.ubuntu.com:80 \
+            --recv-keys C5AD17C747E3415A3642D57D77C6C491D6AC1D69
+          echo "deb [signed-by=/usr/share/keyrings/k6-archive-keyring.gpg] https://dl.k6.io/deb stable main" \
+            | sudo tee /etc/apt/sources.list.d/k6.list
+          sudo apt-get update && sudo apt-get install -y k6
+      - name: Start stack
+        run: API_KEY=test-api-key docker compose up -d --wait --build
+      - name: Run smoke test
+        run: K6_BASE_URL=http://localhost K6_API_KEY=test-api-key make k6-smoke-ci
+      - name: Teardown stack
+        if: always()
+        run: docker compose down -v
+
   lint:
     runs-on: ubuntu-latest
     steps:
