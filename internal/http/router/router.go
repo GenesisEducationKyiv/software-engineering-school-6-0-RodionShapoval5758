@@ -14,11 +14,12 @@ import (
 func New(handler *handler.Handler, apiKey string, m *metrics.Metrics) http.Handler {
 	router := chi.NewRouter()
 
-	router.Use(middleware.Logger)
-	router.Use(middleware.MetricsMiddleware(m))
+	router.Use(middleware.SkipRoutes(middleware.Logger, "/metrics", "/health"))
+	router.Use(middleware.SkipRoutes(middleware.MetricsMiddleware(m), "/metrics"))
 	router.Use(chimiddleware.Recoverer)
 
 	router.Handle("/metrics", m.Handler())
+	router.Get("/health", handler.Health)
 
 	if apiKey != "" {
 		router.Route("/api", func(r chi.Router) {
