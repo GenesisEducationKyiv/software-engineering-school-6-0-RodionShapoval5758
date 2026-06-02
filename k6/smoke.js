@@ -1,5 +1,5 @@
 import http from 'k6/http';
-import { check, sleep } from 'k6';
+import { check, group, sleep } from 'k6';
 import { BASE_URL, authHeaders } from './config.js';
 
 export const options = {
@@ -12,19 +12,29 @@ export const options = {
 };
 
 export default function () {
-  // Auth path — no DB, no external calls.
-  const validate = http.get(`${BASE_URL}/api/validate`, { headers: authHeaders });
-  check(validate, { 'validate: status 200': (r) => r.status === 200 });
+  group('auth guard', () => {
+    // Valid key → 200.
+    const ok = http.get(`${BASE_URL}/api/validate`, { headers: authHeaders });
+    check(ok, { 'validate: status 200': (r) => r.status === 200 });
 
-  // DB read path — exercises the pgx pool.
-  const subs = http.get(`${BASE_URL}/api/subscriptions?email=smoke@test.com`, {
-    headers: authHeaders,
+    // Missing key → 401. responseCallback marks 401 as expected so k6 does
+    // not count this request toward http_req_failed (default ≥ 400 = failed).
+    const noKey = http.get(`${BASE_URL}/api/validate`, {
+      responseCallback: http.expectedStatuses(401),
+    });
+    check(noKey, { 'no auth: status 401': (r) => r.status === 401 });
   });
-  check(subs, { 'subscriptions: status 200': (r) => r.status === 200 });
 
-  // Auth guard — request without a key must be rejected.
-  const unauthorized = http.get(`${BASE_URL}/api/validate`);
-  check(unauthorized, { 'no auth: status 401': (r) => r.status === 401 });
+  group('read path', () => {
+    // DB read path — exercises the pgx pool.
+    const subs = http.get(`${BASE_URL}/api/subscriptions?email=smoke@test.com`, {
+      headers: authHeaders,
+    });
+    check(subs, {
+      'subscriptions: status 200': (r) => r.status === 200,
+      'subscriptions: body is array': (r) => Array.isArray(r.json()),
+    });
+  });
 
   sleep(1);
 }
