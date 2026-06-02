@@ -114,6 +114,18 @@ services:
       retries: 20
       start_period: 60s
 
+  kibana-setup:
+    image: curlimages/curl:8.8.0
+    restart: "no"
+    depends_on:
+      kibana:
+        condition: service_healthy
+    volumes:
+      - ./kibana/setup.sh:/setup.sh:ro
+    entrypoint: ["sh", "/setup.sh"]
+    environment:
+      KIBANA_URL: http://kibana:5601
+
   grafana:
     image: grafana/grafana:13.0.1
     container_name: github-release-notification-grafana
