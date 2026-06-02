@@ -16,7 +16,7 @@ func (s *SubscriptionHandlerTestSuite) TestListSubscriptions_HappyPath() {
 			Email:       "user@example.com",
 			Repo:        "owner/repo",
 			Confirmed:   true,
-			LastSeenTag: new("v1.0.0"),
+			LastSeenTag: "v1.0.0",
 		},
 		{
 			Email:     "user@example.com",

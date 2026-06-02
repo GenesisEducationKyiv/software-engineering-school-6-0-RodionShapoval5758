@@ -12,9 +12,9 @@ type SubscriptionResponse struct {
 func ConvertToResponseModel(details []domain.SubscriptionDetails) []SubscriptionResponse {
 	responses := make([]SubscriptionResponse, 0, len(details))
 	for _, detail := range details {
-		lastSeenTag := "not available yet"
-		if detail.LastSeenTag != nil {
-			lastSeenTag = *detail.LastSeenTag
+		lastSeenTag := detail.LastSeenTag
+		if lastSeenTag == "" {
+			lastSeenTag = "not available yet"
 		}
 
 		response := SubscriptionResponse{

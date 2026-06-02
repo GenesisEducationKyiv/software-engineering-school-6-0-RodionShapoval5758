@@ -24,7 +24,7 @@ type SubscriptionDetails struct {
 	Email       string
 	Repo        string
 	Confirmed   bool
-	LastSeenTag *string
+	LastSeenTag string
 }
 
 func NewSubscription(email string, repositoryID int64) (*Subscription, error) {
