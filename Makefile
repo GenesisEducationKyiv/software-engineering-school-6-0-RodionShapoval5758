@@ -1,4 +1,4 @@
-.PHONY: build up down up-metrics up-logging up-full observability-setup \
+.PHONY: build up down down-all up-metrics up-logging up-full observability-setup \
         test test-integration test-e2e lint lint-fix format format-check \
         k6-smoke k6-load k6-stress k6-spike k6-soak k6-breakpoint k6-write k6-journey k6-suite k6-clean
 
@@ -11,6 +11,9 @@ up:
 down:
 	docker compose down
 
+down-all:
+	docker compose --profile metrics --profile logging --profile setup down
+
 up-metrics:
 	docker compose --profile metrics up -d --wait
 
@@ -21,7 +24,7 @@ up-full:
 	docker compose --profile metrics --profile logging up -d --wait
 
 observability-setup:
-	docker compose --profile setup run --rm kibana-setup
+	docker compose --profile logging --profile setup run --rm kibana-setup
 
 test:
 	go test ./...
