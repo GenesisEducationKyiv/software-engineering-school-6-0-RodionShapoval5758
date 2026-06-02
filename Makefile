@@ -1,11 +1,27 @@
-.PHONY: build up down test test-integration test-e2e lint lint-fix format format-check
+.PHONY: build up down up-metrics up-logging up-full observability-setup \
+        test test-integration test-e2e lint lint-fix format format-check
 
 build:
 	docker compose up --build -d
+
 up:
 	docker compose up -d
+
 down:
 	docker compose down
+
+up-metrics:
+	docker compose --profile metrics up -d --wait
+
+up-logging:
+	docker compose --profile logging up -d --wait
+
+up-full:
+	docker compose --profile metrics --profile logging up -d --wait
+
+observability-setup:
+	docker compose --profile setup run --rm kibana-setup
+
 test:
 	go test ./...
 
