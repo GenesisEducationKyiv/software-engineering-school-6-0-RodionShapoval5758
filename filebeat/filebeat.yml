@@ -8,15 +8,16 @@ processors:
       host: "unix:///var/run/docker.sock"
   - drop_event:
       when:
-        and:
-          - has_fields: ['container.labels.filebeat_collect']
-          - not:
-              equals:
-                container.labels.filebeat_collect: "true"
+        not:
+          equals:
+            container.labels.filebeat_collect: "true"
   - decode_json_fields:
       fields: ["message"]
       target: "app"
       overwrite_keys: true
+  - drop_fields:
+      fields: ["agent", "ecs", "input", "log", "host", "message", "container"]
+      ignore_missing: true
 
 output.elasticsearch:
   hosts: ["http://elasticsearch:9200"]
