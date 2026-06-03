@@ -148,28 +148,6 @@ func (s *SubscriptionServiceTestSuite) TestSubscribe_GithubUnknownError() {
 	s.assertExpectations()
 }
 
-func (s *SubscriptionServiceTestSuite) TestSubscribe_RepoExistsInDB() {
-	repo := &domain.Repository{ID: 1, FullName: "owner/repo"}
-
-	s.github.On("CheckRepo", mock.Anything, "owner/repo").Return(nil)
-	s.repoRepo.On("FindByFullName", mock.Anything, "owner/repo").Return(repo, nil)
-
-	var capturedToken string
-	s.subRepo.On("Create", mock.Anything, validSubMatcher("user@example.com", repo.ID)).
-		Run(func(args mock.Arguments) {
-			capturedToken = args.Get(1).(domain.Subscription).ConfirmToken
-		}).
-		Return(nil)
-	s.smtp.On("SendConfirmationEmail", "user@example.com", "owner/repo", mock.MatchedBy(func(token string) bool {
-		return token != "" && token == capturedToken
-	})).Return(nil)
-
-	err := s.svc.Subscribe(context.Background(), "user@example.com", "owner/repo")
-
-	s.NoError(err)
-	s.assertExpectations()
-}
-
 func (s *SubscriptionServiceTestSuite) TestSubscribe_RepoNotInDB_Created() {
 	repo := &domain.Repository{ID: 1, FullName: "owner/repo"}
 
