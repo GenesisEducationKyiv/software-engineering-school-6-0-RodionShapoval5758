@@ -10,7 +10,9 @@ import (
 	"GithubReleaseNotificationAPI/internal/http/handler"
 	"GithubReleaseNotificationAPI/internal/http/respond"
 	"GithubReleaseNotificationAPI/internal/http/router"
+	"GithubReleaseNotificationAPI/internal/metrics"
 
+	"github.com/prometheus/client_golang/prometheus"
 	"github.com/stretchr/testify/suite"
 )
 
@@ -23,7 +25,7 @@ type SubscriptionHandlerTestSuite struct {
 
 func (s *SubscriptionHandlerTestSuite) SetupTest() {
 	s.subscriptionService = new(mockSubscriptionService)
-	s.router = router.New(handler.New(s.subscriptionService), "")
+	s.router = router.New(handler.New(s.subscriptionService), "", metrics.New(prometheus.NewRegistry()))
 }
 
 func (s *SubscriptionHandlerTestSuite) assertExpectations() {

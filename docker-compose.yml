@@ -1,22 +1,35 @@
+x-logging: &default-logging
+  driver: json-file
+  options:
+    max-size: "10m"
+    max-file: "3"
+
 services:
   nginx:
     build:
       context: .
       dockerfile: Dockerfile.nginx
     container_name: github-release-notification-nginx
+    restart: unless-stopped
+    logging: *default-logging
     depends_on:
-      - app
+      app:
+        condition: service_healthy
     ports:
       - "80:80"
 
   app:
     build: .
     container_name: github-release-notification-api
+    restart: unless-stopped
+    logging: *default-logging
     depends_on:
       postgres_db:
         condition: service_healthy
       mailpit:
         condition: service_started
+    labels:
+      filebeat_collect: "true"
     environment:
       PORT: "8080"
       DATABASE_URL: postgres://postgres:password@postgres_db:5432/github_release_notifications?sslmode=disable
@@ -28,16 +41,22 @@ services:
       SMTP_PASSWORD: ""
       SENDER_EMAIL: noreply@localhost
       MAIN_URL: http://localhost
+    healthcheck:
+      test: ["CMD", "/app/healthcheck"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 15s
 
   postgres_db:
-    image: postgres:16
+    image: postgres:16.9
     container_name: github-release-notification-postgres
+    restart: unless-stopped
+    logging: *default-logging
     environment:
       POSTGRES_USER: postgres
       POSTGRES_PASSWORD: password
       POSTGRES_DB: github_release_notifications
-    ports:
-      - "5432:5432"
     volumes:
       - postgres_data:/var/lib/postgresql/data
       - ./db/init:/docker-entrypoint-initdb.d
@@ -48,16 +67,120 @@ services:
       retries: 10
 
   mailpit:
-    image: axllent/mailpit
+    image: axllent/mailpit:v1.30.1
     container_name: github-release-notification-mailpit
     restart: unless-stopped
+    logging: *default-logging
     ports:
       - "8025:8025"
-      - "1025:1025"
     environment:
       MP_MAX_MESSAGES: 5000
       MP_SMTP_AUTH_ACCEPT_ANY: 1
       MP_SMTP_AUTH_ALLOW_INSECURE: 1
 
+  elasticsearch:
+    image: docker.elastic.co/elasticsearch/elasticsearch:8.13.4
+    container_name: github-release-notification-elasticsearch
+    profiles: ["logging"]
+    restart: unless-stopped
+    logging: *default-logging
+    environment:
+      - discovery.type=single-node
+      - xpack.security.enabled=false
+      - ES_JAVA_OPTS=-Xms512m -Xmx512m
+    volumes:
+      - elasticsearch_data:/usr/share/elasticsearch/data
+    healthcheck:
+      test: ["CMD-SHELL", "curl -s http://localhost:9200/_cluster/health | grep -q '\"status\":\"green\"\\|\"status\":\"yellow\"'"]
+      interval: 10s
+      timeout: 10s
+      retries: 20
+
+  kibana:
+    image: docker.elastic.co/kibana/kibana:8.13.4
+    container_name: github-release-notification-kibana
+    profiles: ["logging"]
+    restart: unless-stopped
+    logging: *default-logging
+    ports:
+      - "5601:5601"
+    environment:
+      - ELASTICSEARCH_HOSTS=http://elasticsearch:9200
+    depends_on:
+      elasticsearch:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD-SHELL", "curl -sf http://localhost:5601/api/status | grep -q '\"level\":\"available\"'"]
+      interval: 15s
+      timeout: 10s
+      retries: 20
+      start_period: 60s
+
+  kibana-setup:
+    image: curlimages/curl:8.8.0
+    profiles: ["setup"]
+    restart: "no"
+    depends_on:
+      kibana:
+        condition: service_healthy
+    volumes:
+      - ./kibana/setup.sh:/setup.sh:ro
+    entrypoint: ["sh", "/setup.sh"]
+    environment:
+      KIBANA_URL: http://kibana:5601
+
+  grafana:
+    image: grafana/grafana:13.0.1
+    container_name: github-release-notification-grafana
+    profiles: ["metrics"]
+    restart: unless-stopped
+    logging: *default-logging
+    ports:
+      - "3000:3000"
+    environment:
+      - GF_SECURITY_ADMIN_USER=rodion
+      - GF_SECURITY_ADMIN_PASSWORD=rodion
+    volumes:
+      - ./grafana/provisioning:/etc/grafana/provisioning:ro
+      - ./grafana/dashboards:/var/lib/grafana/dashboards:ro
+    depends_on:
+      - prometheus
+
+  prometheus:
+    image: prom/prometheus:v3.12.0
+    container_name: github-release-notification-prometheus
+    profiles: ["metrics"]
+    restart: unless-stopped
+    logging: *default-logging
+    ports:
+      - "9090:9090"
+    command:
+      - "--config.file=/etc/prometheus/prometheus.yml"
+      - "--storage.tsdb.path=/prometheus"
+      - "--web.enable-remote-write-receiver"
+    volumes:
+      - ./prometheus/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - prometheus_data:/prometheus
+    depends_on:
+      - app
+
+  filebeat:
+    image: docker.elastic.co/beats/filebeat:8.13.4
+    container_name: github-release-notification-filebeat
+    profiles: ["logging"]
+    restart: unless-stopped
+    logging: *default-logging
+    user: root
+    volumes:
+      - ./filebeat/filebeat.yml:/usr/share/filebeat/filebeat.yml:ro
+      - /var/lib/docker/containers:/var/lib/docker/containers:ro
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+    depends_on:
+      elasticsearch:
+        condition: service_healthy
+    command: filebeat -e -strict.perms=false
+
 volumes:
   postgres_data:
+  elasticsearch_data:
+  prometheus_data:

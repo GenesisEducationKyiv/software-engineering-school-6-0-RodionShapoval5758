@@ -17,13 +17,24 @@ import (
 	httpHandler "GithubReleaseNotificationAPI/internal/http/handler"
 	httpRouter "GithubReleaseNotificationAPI/internal/http/router"
 	"GithubReleaseNotificationAPI/internal/mail"
+	"GithubReleaseNotificationAPI/internal/metrics"
 	"GithubReleaseNotificationAPI/internal/service"
 	"GithubReleaseNotificationAPI/internal/store"
 	"GithubReleaseNotificationAPI/internal/watcher"
+
+	"github.com/prometheus/client_golang/prometheus"
 )
 
 func main() {
-	logger := slog.New(slog.NewJSONHandler(os.Stdout, nil))
+	logger := slog.New(slog.NewJSONHandler(os.Stdout, &slog.HandlerOptions{
+		ReplaceAttr: func(groups []string, a slog.Attr) slog.Attr {
+			if a.Key == slog.MessageKey {
+				a.Key = "message"
+			}
+			return a
+		},
+	})).With(
+		slog.Group("service", slog.String("name", "github-release-notification-api")))
 	slog.SetDefault(logger)
 
 	if err := run(); err != nil {
@@ -72,8 +83,10 @@ func run() error {
 		smtpClient,
 	)
 
+	reg := prometheus.NewRegistry()
+	appMetrics := metrics.New(reg)
 	handler := httpHandler.New(subscriptionService)
-	router := httpRouter.New(handler, cfg.ApiKey)
+	router := httpRouter.New(handler, cfg.ApiKey, appMetrics)
 
 	server := &http.Server{
 		Addr:    ":" + cfg.Port,
@@ -92,8 +105,9 @@ func run() error {
 	shutdownSignalCtx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
 
+	go appMetrics.CollectDBStats(shutdownSignalCtx, dbPool, 15*time.Second)
 	releaseNotifier := watcher.NewReleaseNotifier(smtpClient, subscriptionRepository)
-	worker := watcher.NewWorker(githubClient, repositoryRepository, releaseNotifier)
+	worker := watcher.NewWorker(githubClient, repositoryRepository, releaseNotifier, appMetrics)
 
 	go func() {
 		if err := worker.Start(shutdownSignalCtx, 25*time.Second); err != nil {

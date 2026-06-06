@@ -10,8 +10,11 @@ import (
 	httpHandler "GithubReleaseNotificationAPI/internal/http/handler"
 	httpRouter "GithubReleaseNotificationAPI/internal/http/router"
 	"GithubReleaseNotificationAPI/internal/mail"
+	"GithubReleaseNotificationAPI/internal/metrics"
 	"GithubReleaseNotificationAPI/internal/service"
 	"GithubReleaseNotificationAPI/internal/store"
+
+	"github.com/prometheus/client_golang/prometheus"
 
 	"github.com/stretchr/testify/suite"
 )
@@ -31,7 +34,7 @@ func (s *IntegrationSuite) SetupSuite() {
 	s.githubFake = &fakeGithubClient{}
 	svc := service.NewSubscriptionService(subRepo, repoRepo, s.githubFake, smtpClient)
 	h := httpHandler.New(svc)
-	s.router = httpRouter.New(h, testAPIKey)
+	s.router = httpRouter.New(h, testAPIKey, metrics.New(prometheus.NewRegistry()))
 }
 
 func (s *IntegrationSuite) SetupTest() {

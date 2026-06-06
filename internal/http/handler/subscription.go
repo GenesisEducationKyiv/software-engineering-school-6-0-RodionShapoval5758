@@ -46,7 +46,7 @@ func (h *Handler) Subscribe(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if err := h.subscriptionService.Subscribe(r.Context(), req.Email, req.Repo); err != nil {
-		handleError(w, err)
+		handleError(w, r, err)
 
 		return
 	}
@@ -66,7 +66,7 @@ func (h *Handler) Confirm(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if err := h.subscriptionService.Confirm(r.Context(), token); err != nil {
-		handleError(w, err)
+		handleError(w, r, err)
 
 		return
 	}
@@ -86,7 +86,7 @@ func (h *Handler) Unsubscribe(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if err := h.subscriptionService.Unsubscribe(r.Context(), token); err != nil {
-		handleError(w, err)
+		handleError(w, r, err)
 
 		return
 	}
@@ -107,7 +107,7 @@ func (h *Handler) ListSubscriptions(w http.ResponseWriter, r *http.Request) {
 
 	subscriptions, err := h.subscriptionService.ListByEmail(r.Context(), email)
 	if err != nil {
-		handleError(w, err)
+		handleError(w, r, err)
 
 		return
 	}

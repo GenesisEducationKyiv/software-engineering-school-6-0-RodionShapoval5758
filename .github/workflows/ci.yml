@@ -70,6 +70,20 @@ jobs:
         if: always()
         run: docker compose down -v
 
+  smoke-test:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repo
+        uses: actions/checkout@v6
+      - uses: grafana/setup-k6-action@v1
+      - name: Start stack
+        run: API_KEY=test-api-key docker compose up -d --wait --build
+      - name: Run smoke test
+        run: K6_BASE_URL=http://localhost K6_API_KEY=test-api-key make k6-smoke-ci
+      - name: Teardown stack
+        if: always()
+        run: docker compose down -v
+
   lint:
     runs-on: ubuntu-latest
     steps:

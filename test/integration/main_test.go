@@ -28,6 +28,10 @@ var (
 )
 
 func TestMain(m *testing.M) {
+	os.Exit(run(m))
+}
+
+func run(m *testing.M) int {
 	_, filename, _, _ := runtime.Caller(0)
 	root := filepath.Join(filepath.Dir(filename), "..", "..")
 	if err := os.Chdir(root); err != nil {
@@ -36,8 +40,11 @@ func TestMain(m *testing.M) {
 
 	ctx := context.Background()
 
-	dsn := resolvePostgres(ctx)
-	resolveMailpit(ctx)
+	dsn, pgCleanup := resolvePostgres(ctx)
+	defer pgCleanup()
+
+	mailCleanup := resolveMailpit(ctx)
+	defer mailCleanup()
 
 	if err := db.RunMigrations(dsn); err != nil {
 		log.Fatalf("run migrations: %v", err)
@@ -50,12 +57,12 @@ func TestMain(m *testing.M) {
 	testPool = pool
 	defer testPool.Close()
 
-	os.Exit(m.Run())
+	return m.Run()
 }
 
-func resolvePostgres(ctx context.Context) string {
+func resolvePostgres(ctx context.Context) (string, func()) {
 	if dsn := os.Getenv("TEST_DATABASE_URL"); dsn != "" {
-		return dsn
+		return dsn, func() {}
 	}
 
 	ctr, err := tcpostgres.Run(ctx, "postgres:16",
@@ -72,10 +79,15 @@ func resolvePostgres(ctx context.Context) string {
 	if err != nil {
 		log.Fatalf("get postgres connection string: %v", err)
 	}
-	return dsn
+
+	return dsn, func() {
+		if err := ctr.Terminate(ctx); err != nil {
+			log.Printf("terminate postgres container: %v", err)
+		}
+	}
 }
 
-func resolveMailpit(ctx context.Context) {
+func resolveMailpit(ctx context.Context) func() {
 	if u := os.Getenv("TEST_MAILPIT_URL"); u != "" {
 		mailpitBaseURL = u
 		smtpHost = os.Getenv("TEST_SMTP_HOST")
@@ -86,7 +98,7 @@ func resolveMailpit(ctx context.Context) {
 		if smtpPort == "" {
 			smtpPort = "1025"
 		}
-		return
+		return func() {}
 	}
 
 	ctr, err := testcontainers.GenericContainer(ctx, testcontainers.GenericContainerRequest{
@@ -121,4 +133,10 @@ func resolveMailpit(ctx context.Context) {
 	mailpitBaseURL = fmt.Sprintf("http://%s:%s", host, httpPort.Port())
 	smtpHost = host
 	smtpPort = smtpMapped.Port()
+
+	return func() {
+		if err := ctr.Terminate(ctx); err != nil {
+			log.Printf("terminate mailpit container: %v", err)
+		}
+	}
 }
