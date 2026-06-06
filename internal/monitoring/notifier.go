@@ -26,7 +26,7 @@ func (n *ReleaseNotifier) NotifyConfirmedSubscribers(
 	repo catalog.Repository,
 	release *github.Release,
 ) error {
-	subscriptions, err := n.subscriberReader.ListConfirmedByRepositoryID(ctx, repo.ID)
+	confirmed, err := n.subscriberReader.ListConfirmedByRepositoryID(ctx, repo.ID)
 	if err != nil {
 		return err
 	}
@@ -35,15 +35,15 @@ func (n *ReleaseNotifier) NotifyConfirmedSubscribers(
 		"worker loaded confirmed subscriptions",
 		"repository_id", repo.ID,
 		"repository", repo.FullName,
-		"count", len(subscriptions),
+		"count", len(confirmed),
 	)
 
-	if len(subscriptions) == 0 {
+	if len(confirmed) == 0 {
 		return nil
 	}
 
-	recipients := make([]notification.ReleaseRecipient, len(subscriptions))
-	for i, sub := range subscriptions {
+	recipients := make([]notification.ReleaseRecipient, len(confirmed))
+	for i, sub := range confirmed {
 		recipients[i] = notification.ReleaseRecipient{
 			Email:            sub.Email,
 			UnsubscribeToken: sub.UnsubscribeToken,

@@ -15,16 +15,33 @@ import (
 	"GithubReleaseNotificationAPI/internal/config"
 	"GithubReleaseNotificationAPI/internal/db"
 	"GithubReleaseNotificationAPI/internal/github"
-	httpHandler "GithubReleaseNotificationAPI/internal/http/handler"
 	httpRouter "GithubReleaseNotificationAPI/internal/http/router"
 	"GithubReleaseNotificationAPI/internal/metrics"
+	"GithubReleaseNotificationAPI/internal/monitoring"
 	"GithubReleaseNotificationAPI/internal/notification"
-	"GithubReleaseNotificationAPI/internal/service"
-	"GithubReleaseNotificationAPI/internal/store"
-	"GithubReleaseNotificationAPI/internal/watcher"
+	"GithubReleaseNotificationAPI/internal/subscription"
 
 	"github.com/prometheus/client_golang/prometheus"
 )
+
+type confirmedSubReader struct{ svc *subscription.Service }
+
+func (r confirmedSubReader) ListConfirmedByRepositoryID(ctx context.Context, id int64) ([]monitoring.ConfirmedSubscriber, error) {
+	subs, err := r.svc.ListConfirmedByRepositoryID(ctx, id)
+	if err != nil {
+		return nil, err
+	}
+
+	cs := make([]monitoring.ConfirmedSubscriber, len(subs))
+	for i, s := range subs {
+		cs[i] = monitoring.ConfirmedSubscriber{
+			Email:            s.Email,
+			UnsubscribeToken: s.UnsubscribeToken,
+		}
+	}
+
+	return cs, nil
+}
 
 func main() {
 	logger := slog.New(slog.NewJSONHandler(os.Stdout, &slog.HandlerOptions{
@@ -63,13 +80,12 @@ func run() error {
 	}
 	defer dbPool.Close()
 
-	subscriptionRepository := store.NewSubscriptionRepository(dbPool)
-	repositoryRepository := store.NewRepoRepository(dbPool)
 	catalogService := catalog.New(dbPool)
+	subRepo := subscription.NewRepository(dbPool)
 
 	githubClient := github.NewGithubClient(http.DefaultClient, &cfg.GithubToken)
 
-	smtpClient := notification.NewMailer(
+	mailer := notification.NewMailer(
 		cfg.SMTPHost,
 		cfg.SMTPPort,
 		cfg.SMTPUser,
@@ -78,17 +94,12 @@ func run() error {
 		cfg.AppBaseURL,
 	)
 
-	subscriptionService := service.NewSubscriptionService(
-		subscriptionRepository,
-		repositoryRepository,
-		githubClient,
-		smtpClient,
-	)
+	subService := subscription.NewService(subRepo, catalogService, githubClient, mailer)
+	subHandler := subscription.New(subService)
 
 	reg := prometheus.NewRegistry()
 	appMetrics := metrics.New(reg)
-	handler := httpHandler.New(subscriptionService)
-	router := httpRouter.New(handler, cfg.ApiKey, appMetrics)
+	router := httpRouter.New(subHandler, cfg.ApiKey, appMetrics)
 
 	server := &http.Server{
 		Addr:    ":" + cfg.Port,
@@ -108,8 +119,9 @@ func run() error {
 	defer stop()
 
 	go appMetrics.CollectDBStats(shutdownSignalCtx, dbPool, 15*time.Second)
-	releaseNotifier := watcher.NewReleaseNotifier(smtpClient, subscriptionRepository)
-	worker := watcher.NewWorker(githubClient, catalogService, releaseNotifier, appMetrics)
+
+	releaseNotifier := monitoring.NewReleaseNotifier(mailer, confirmedSubReader{svc: subService})
+	worker := monitoring.NewWorker(githubClient, catalogService, releaseNotifier, appMetrics)
 
 	go func() {
 		if err := worker.Start(shutdownSignalCtx, 25*time.Second); err != nil {

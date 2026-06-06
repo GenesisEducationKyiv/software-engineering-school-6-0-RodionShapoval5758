@@ -4,10 +4,14 @@ import (
 	"context"
 
 	"GithubReleaseNotificationAPI/internal/catalog"
-	"GithubReleaseNotificationAPI/internal/domain"
 	"GithubReleaseNotificationAPI/internal/github"
 	"GithubReleaseNotificationAPI/internal/notification"
 )
+
+type ConfirmedSubscriber struct {
+	Email            string
+	UnsubscribeToken string
+}
 
 type catalogClient interface {
 	ListTracked(ctx context.Context) ([]catalog.Repository, error)
@@ -19,7 +23,7 @@ type githubClient interface {
 }
 
 type subscriberReader interface {
-	ListConfirmedByRepositoryID(ctx context.Context, repositoryID int64) ([]domain.Subscription, error)
+	ListConfirmedByRepositoryID(ctx context.Context, repositoryID int64) ([]ConfirmedSubscriber, error)
 }
 
 type mailer interface {
