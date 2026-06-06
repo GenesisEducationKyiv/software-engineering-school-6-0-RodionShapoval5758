@@ -95,7 +95,7 @@ func (s *SubscriptionServiceTestSuite) TestSubscribe_NormalizesInput() {
 			capturedToken = args.Get(1).(domain.Subscription).ConfirmToken
 		}).
 		Return(nil)
-	s.smtp.On("SendConfirmationEmail", "user@example.com", "owner/repo", mock.MatchedBy(func(token string) bool {
+	s.smtp.On("SendConfirmation", "user@example.com", "owner/repo", mock.MatchedBy(func(token string) bool {
 		return token != "" && token == capturedToken
 	})).Return(nil)
 
@@ -163,7 +163,7 @@ func (s *SubscriptionServiceTestSuite) TestSubscribe_RepoNotInDB_Created() {
 			capturedToken = args.Get(1).(domain.Subscription).ConfirmToken
 		}).
 		Return(nil)
-	s.smtp.On("SendConfirmationEmail", "user@example.com", "owner/repo", mock.MatchedBy(func(token string) bool {
+	s.smtp.On("SendConfirmation", "user@example.com", "owner/repo", mock.MatchedBy(func(token string) bool {
 		return token != "" && token == capturedToken
 	})).Return(nil)
 
@@ -197,7 +197,7 @@ func (s *SubscriptionServiceTestSuite) TestSubscribe_RepoCreateRaceRecovery() {
 			capturedToken = args.Get(1).(domain.Subscription).ConfirmToken
 		}).
 		Return(nil)
-	s.smtp.On("SendConfirmationEmail", "user@example.com", "owner/repo", mock.MatchedBy(func(token string) bool {
+	s.smtp.On("SendConfirmation", "user@example.com", "owner/repo", mock.MatchedBy(func(token string) bool {
 		return token != "" && token == capturedToken
 	})).Return(nil)
 
@@ -259,7 +259,7 @@ func (s *SubscriptionServiceTestSuite) TestSubscribe_TokenCollisionRetry() {
 			capturedToken = args.Get(1).(domain.Subscription).ConfirmToken
 		}).
 		Return(nil).Once()
-	s.smtp.On("SendConfirmationEmail", "user@example.com", "owner/repo", mock.MatchedBy(func(token string) bool {
+	s.smtp.On("SendConfirmation", "user@example.com", "owner/repo", mock.MatchedBy(func(token string) bool {
 		return token != "" && token == capturedToken
 	})).Return(nil)
 
@@ -309,7 +309,7 @@ func (s *SubscriptionServiceTestSuite) TestSubscribe_EmailSendFails() {
 			capturedToken = args.Get(1).(domain.Subscription).ConfirmToken
 		}).
 		Return(nil)
-	s.smtp.On("SendConfirmationEmail", "user@example.com", "owner/repo", mock.MatchedBy(func(token string) bool {
+	s.smtp.On("SendConfirmation", "user@example.com", "owner/repo", mock.MatchedBy(func(token string) bool {
 		return token != "" && token == capturedToken
 	})).Return(errors.New("smtp error"))
 

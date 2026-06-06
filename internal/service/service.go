@@ -33,7 +33,7 @@ type repositoryRepository interface {
 }
 
 type smtpClient interface {
-	SendConfirmationEmail(toEmail, repoName, confirmToken string) error
+	SendConfirmation(toEmail, repoName, confirmToken string) error
 }
 
 type subscriptionService struct {

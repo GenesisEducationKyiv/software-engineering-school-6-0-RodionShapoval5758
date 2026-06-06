@@ -96,7 +96,7 @@ type mockSmtpClient struct {
 	mock.Mock
 }
 
-func (m *mockSmtpClient) SendConfirmationEmail(toEmail, repoName, confirmToken string) error {
+func (m *mockSmtpClient) SendConfirmation(toEmail, repoName, confirmToken string) error {
 	args := m.Called(toEmail, repoName, confirmToken)
 
 	return args.Error(0)

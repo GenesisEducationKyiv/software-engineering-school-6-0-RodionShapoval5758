@@ -5,10 +5,11 @@ import (
 	"log/slog"
 
 	"GithubReleaseNotificationAPI/internal/domain"
+	"GithubReleaseNotificationAPI/internal/notification"
 )
 
 type smtpClient interface {
-	SendReleaseNotifications(subscriptions []domain.Subscription, release *domain.Release) error
+	SendReleaseEmails(recipients []notification.ReleaseRecipient, release notification.ReleaseInfo) error
 }
 
 type subscriptionRepository interface {
@@ -51,5 +52,17 @@ func (n *ReleaseNotifier) NotifyConfirmedSubscribers(
 		return nil
 	}
 
-	return n.smtpClient.SendReleaseNotifications(subscriptions, release)
+	recipients := make([]notification.ReleaseRecipient, len(subscriptions))
+	for i, sub := range subscriptions {
+		recipients[i] = notification.ReleaseRecipient{
+			Email:            sub.Email,
+			UnsubscribeToken: sub.UnsubscribeToken,
+		}
+	}
+
+	return n.smtpClient.SendReleaseEmails(recipients, notification.ReleaseInfo{
+		Tag:  release.Tag,
+		Name: release.Name,
+		URL:  release.URL,
+	})
 }

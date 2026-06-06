@@ -5,6 +5,7 @@ import (
 	"errors"
 
 	"GithubReleaseNotificationAPI/internal/domain"
+	"GithubReleaseNotificationAPI/internal/notification"
 
 	"github.com/stretchr/testify/mock"
 )
@@ -37,15 +38,20 @@ func (s *WatcherTestSuite) TestReleaseNotifier_NoSubscribers() {
 
 func (s *WatcherTestSuite) TestReleaseNotifier_MultipleSubscribers() {
 	repo := domain.Repository{ID: 1, FullName: "owner/repo"}
-	release := &domain.Release{Tag: "v1.0.0"}
+	release := &domain.Release{Tag: "v1.0.0", Name: "Release 1", URL: "https://github.com"}
 	subs := []domain.Subscription{
 		{Email: "alice@example.com", UnsubscribeToken: "token-alice"},
 		{Email: "bob@example.com", UnsubscribeToken: "token-bob"},
 	}
+	expectedRecipients := []notification.ReleaseRecipient{
+		{Email: "alice@example.com", UnsubscribeToken: "token-alice"},
+		{Email: "bob@example.com", UnsubscribeToken: "token-bob"},
+	}
+	expectedRelease := notification.ReleaseInfo{Tag: "v1.0.0", Name: "Release 1", URL: "https://github.com"}
 
 	s.subRepo.On("ListConfirmedByRepositoryID", mock.Anything, int64(1)).
 		Return(subs, nil)
-	s.smtp.On("SendReleaseNotifications", subs, release).Return(nil)
+	s.smtp.On("SendReleaseEmails", expectedRecipients, expectedRelease).Return(nil)
 
 	err := s.releaseNotifier.NotifyConfirmedSubscribers(context.Background(), repo, release)
 
@@ -55,15 +61,20 @@ func (s *WatcherTestSuite) TestReleaseNotifier_MultipleSubscribers() {
 
 func (s *WatcherTestSuite) TestReleaseNotifier_SMTPError_Propagates() {
 	repo := domain.Repository{ID: 1, FullName: "owner/repo"}
-	release := &domain.Release{Tag: "v1.0.0"}
+	release := &domain.Release{Tag: "v1.0.0", Name: "Release 1", URL: "https://github.com"}
 	subs := []domain.Subscription{
 		{Email: "alice@example.com", UnsubscribeToken: "token-alice"},
 		{Email: "bob@example.com", UnsubscribeToken: "token-bob"},
 	}
+	expectedRecipients := []notification.ReleaseRecipient{
+		{Email: "alice@example.com", UnsubscribeToken: "token-alice"},
+		{Email: "bob@example.com", UnsubscribeToken: "token-bob"},
+	}
+	expectedRelease := notification.ReleaseInfo{Tag: "v1.0.0", Name: "Release 1", URL: "https://github.com"}
 
 	s.subRepo.On("ListConfirmedByRepositoryID", mock.Anything, int64(1)).
 		Return(subs, nil)
-	s.smtp.On("SendReleaseNotifications", subs, release).
+	s.smtp.On("SendReleaseEmails", expectedRecipients, expectedRelease).
 		Return(errors.New("partial smtp failure"))
 
 	err := s.releaseNotifier.NotifyConfirmedSubscribers(context.Background(), repo, release)

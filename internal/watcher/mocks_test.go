@@ -4,6 +4,7 @@ import (
 	"context"
 
 	"GithubReleaseNotificationAPI/internal/domain"
+	"GithubReleaseNotificationAPI/internal/notification"
 
 	"github.com/stretchr/testify/mock"
 )
@@ -12,8 +13,8 @@ type mockSmtpClient struct {
 	mock.Mock
 }
 
-func (m *mockSmtpClient) SendReleaseNotifications(subscriptions []domain.Subscription, release *domain.Release) error {
-	args := m.Called(subscriptions, release)
+func (m *mockSmtpClient) SendReleaseEmails(recipients []notification.ReleaseRecipient, release notification.ReleaseInfo) error {
+	args := m.Called(recipients, release)
 
 	return args.Error(0)
 }

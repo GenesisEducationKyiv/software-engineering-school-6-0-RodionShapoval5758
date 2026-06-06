@@ -125,7 +125,7 @@ func (s *subscriptionService) createPendingSubscription(ctx context.Context, ema
 }
 
 func (s *subscriptionService) sendConfirmationEmail(email, repo, token string) error {
-	if err := s.smtpClient.SendConfirmationEmail(email, repo, token); err != nil {
+	if err := s.smtpClient.SendConfirmation(email, repo, token); err != nil {
 		return fmt.Errorf("send confirmation email for repo %s: %w", repo, err)
 	}
 

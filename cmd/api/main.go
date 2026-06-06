@@ -16,8 +16,8 @@ import (
 	"GithubReleaseNotificationAPI/internal/github"
 	httpHandler "GithubReleaseNotificationAPI/internal/http/handler"
 	httpRouter "GithubReleaseNotificationAPI/internal/http/router"
-	"GithubReleaseNotificationAPI/internal/mail"
 	"GithubReleaseNotificationAPI/internal/metrics"
+	"GithubReleaseNotificationAPI/internal/notification"
 	"GithubReleaseNotificationAPI/internal/service"
 	"GithubReleaseNotificationAPI/internal/store"
 	"GithubReleaseNotificationAPI/internal/watcher"
@@ -67,7 +67,7 @@ func run() error {
 
 	githubClient := github.NewGithubClient(http.DefaultClient, &cfg.GithubToken)
 
-	smtpClient := mail.NewSMTPService(
+	smtpClient := notification.NewMailer(
 		cfg.SMTPHost,
 		cfg.SMTPPort,
 		cfg.SMTPUser,
