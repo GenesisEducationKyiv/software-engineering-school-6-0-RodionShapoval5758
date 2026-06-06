@@ -1,0 +1,165 @@
+version: '3'
+
+vars:
+  K6_PROM_URL:    '{{.K6_PROM_URL    | default "http://localhost:9090/api/v1/write"}}'
+  K6_BASE_URL:    '{{.K6_BASE_URL    | default "http://localhost"}}'
+  K6_API_KEY:     '{{.K6_API_KEY     | default "genesis-summer-school"}}'
+  K6_TREND_STATS: '{{.K6_TREND_STATS | default "p(95),p(99),avg,min,max"}}'
+
+tasks:
+  build:
+    desc: Build images and start core services
+    cmds:
+      - docker compose up --build --wait -d
+
+  up-core:
+    desc: Start core services
+    cmds:
+      - docker compose up -d
+
+  down-core:
+    desc: Stop core services
+    cmds:
+      - docker compose down
+
+  down-all:
+    desc: Stop all profiles (metrics, logging, setup)
+    cmds:
+      - docker compose --profile metrics --profile logging --profile setup down
+
+  up-full:
+    desc: Start core + metrics + logging profiles
+    cmds:
+      - docker compose --profile metrics --profile logging up -d --wait
+      - task: observability-setup
+
+  observability-setup:
+    desc: Run one-off kibana setup
+    cmds:
+      - docker compose --profile logging --profile setup run --rm kibana-setup
+
+  test-all:
+    desc: Run unit, integration and e2e tests
+    cmds:
+      - task: test-unit
+      - task: test-integration
+      - task: test-e2e
+
+  test-unit:
+    desc: Run unit tests
+    cmds:
+      - go test ./...
+
+  test-integration:
+    desc: Run integration tests
+    cmds:
+      - go test -tags=integration ./test/integration/... -v
+
+  test-e2e:
+    desc: Spin up stack, run Playwright tests, tear down
+    cmds:
+      - API_KEY=test-api-key docker compose up -d --wait --build
+      - cd frontend && API_KEY=test-api-key npx playwright test
+      - docker compose down -v
+
+  lint:
+    desc: Run golangci-lint
+    cmds:
+      - golangci-lint run -c .golangci.yaml
+
+  lint-fix:
+    desc: Run golangci-lint with auto-fix
+    cmds:
+      - golangci-lint run -c .golangci.yaml --fix
+
+  format:
+    desc: Format code via golangci-lint fmt
+    cmds:
+      - golangci-lint fmt -c .golangci.yaml
+
+  format-check:
+    desc: Check formatting without applying changes
+    cmds:
+      - golangci-lint fmt -c .golangci.yaml --diff
+
+# ── k6 ───────────────────────────────────────────────────────────────────────
+
+  _k6:
+    internal: true
+    env:
+      K6_PROMETHEUS_RW_SERVER_URL: "{{.K6_PROM_URL}}"
+      K6_PROMETHEUS_RW_TREND_STATS: "{{.K6_TREND_STATS}}"
+    cmds:
+      - k6 run -o experimental-prometheus-rw --tag testid={{.TESTID}}
+          -e BASE_URL={{.K6_BASE_URL}} -e API_KEY={{.K6_API_KEY}} {{.SCRIPT}}
+
+  k6-smoke:
+    desc: Smoke test (with Prometheus remote write)
+    cmds:
+      - task: _k6
+        vars: { TESTID: smoke, SCRIPT: k6/smoke.js }
+
+  k6-smoke-ci:
+    desc: Smoke test (CI mode, no Prometheus)
+    cmds:
+      - k6 run -e BASE_URL={{.K6_BASE_URL}} -e API_KEY={{.K6_API_KEY}} k6/smoke.js
+
+  k6-load:
+    desc: Read load test
+    cmds:
+      - task: _k6
+        vars: { TESTID: read-load, SCRIPT: k6/read-load.js }
+
+  k6-stress:
+    desc: Read stress test
+    cmds:
+      - task: _k6
+        vars: { TESTID: read-stress, SCRIPT: k6/read-stress.js }
+
+  k6-spike:
+    desc: Spike test
+    cmds:
+      - task: _k6
+        vars: { TESTID: read-spike, SCRIPT: k6/read-spike.js }
+
+  k6-soak:
+    desc: Soak test
+    cmds:
+      - task: _k6
+        vars: { TESTID: read-soak, SCRIPT: k6/read-soak.js }
+
+  k6-breakpoint:
+    desc: Breakpoint test
+    cmds:
+      - task: _k6
+        vars: { TESTID: breakpoint, SCRIPT: k6/breakpoint.js }
+
+  k6-write:
+    desc: Write load test
+    cmds:
+      - task: _k6
+        vars: { TESTID: write-load, SCRIPT: k6/write-load.js }
+
+  k6-journey:
+    desc: Full user journey test (requires Mailpit)
+    env:
+      K6_PROMETHEUS_RW_SERVER_URL: "{{.K6_PROM_URL}}"
+      K6_PROMETHEUS_RW_TREND_STATS: "{{.K6_TREND_STATS}}"
+    cmds:
+      - k6 run -o experimental-prometheus-rw --tag testid=journey
+          -e BASE_URL={{.K6_BASE_URL}} -e API_KEY={{.K6_API_KEY}}
+          -e MAILPIT_URL=http://localhost:8025 k6/journey.js
+
+  k6-suite:
+    desc: Run smoke → load → stress → spike sequentially
+    cmds:
+      - task: k6-smoke
+      - task: k6-load
+      - task: k6-stress
+      - task: k6-spike
+
+  k6-clean:
+    desc: Delete load-test subscriptions from the database
+    cmds:
+      - docker compose exec -T postgres_db psql -U postgres -d github_release_notifications
+          -c "DELETE FROM subscriptions WHERE email LIKE '%@loadtest.local';"

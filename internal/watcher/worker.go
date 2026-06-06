@@ -9,7 +9,9 @@ import (
 	"time"
 
 	"GithubReleaseNotificationAPI/internal/domain"
+	githubclient "GithubReleaseNotificationAPI/internal/github"
 	"GithubReleaseNotificationAPI/internal/idgen"
+	"GithubReleaseNotificationAPI/internal/shared"
 )
 
 type scanObserver interface {
@@ -76,7 +78,7 @@ func (w *Worker) Start(ctx context.Context, loopDuration time.Duration) error {
 }
 
 func (w *Worker) handleScanError(err error) {
-	if errors.Is(err, domain.ErrRateLimited) {
+	if errors.Is(err, githubclient.ErrRateLimited) {
 		slog.Warn("GitHub API rate limit exceeded. Pausing scanner until next interval.")
 
 		return
@@ -109,7 +111,7 @@ func (w *Worker) runOneScan(ctx context.Context) error {
 
 	if rateLimited.Load() {
 		w.observeScan(time.Since(start), "rate_limited")
-		return domain.ErrRateLimited
+		return githubclient.ErrRateLimited
 	}
 
 	w.observeScan(time.Since(start), "ok")
@@ -163,7 +165,7 @@ func (w *Worker) handleRepositoryProcessingError(
 	rateLimited *atomic.Bool,
 	logger *slog.Logger,
 ) {
-	if errors.Is(err, domain.ErrRateLimited) {
+	if errors.Is(err, githubclient.ErrRateLimited) {
 		rateLimited.Store(true)
 		cancelScan()
 
@@ -220,7 +222,7 @@ func (w *Worker) processRepository(ctx context.Context, repo domain.Repository, 
 func (w *Worker) getLatestRelease(ctx context.Context, repo domain.Repository, logger *slog.Logger) (*domain.Release, error) {
 	release, err := w.githubClient.GetLatestTag(ctx, repo.FullName)
 	if err != nil {
-		if errors.Is(err, domain.ErrNotFound) {
+		if errors.Is(err, shared.ErrNotFound) {
 			logger.Info(
 				"worker skipped repository without latest release",
 				"repository_id", repo.ID,

@@ -4,8 +4,8 @@ import (
 	"context"
 	"errors"
 
-	"GithubReleaseNotificationAPI/internal/domain"
 	"GithubReleaseNotificationAPI/internal/service"
+	"GithubReleaseNotificationAPI/internal/shared"
 
 	"github.com/stretchr/testify/mock"
 )
@@ -20,7 +20,7 @@ func (s *SubscriptionServiceTestSuite) TestConfirm_Success() {
 }
 
 func (s *SubscriptionServiceTestSuite) TestConfirm_TokenNotFound() {
-	s.subRepo.On("Confirm", mock.Anything, "token123").Return(domain.ErrNotFound)
+	s.subRepo.On("Confirm", mock.Anything, "token123").Return(shared.ErrNotFound)
 
 	err := s.svc.Confirm(context.Background(), "token123")
 

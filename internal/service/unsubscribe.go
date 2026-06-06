@@ -6,6 +6,7 @@ import (
 	"fmt"
 
 	"GithubReleaseNotificationAPI/internal/domain"
+	"GithubReleaseNotificationAPI/internal/shared"
 )
 
 func (s *subscriptionService) Unsubscribe(ctx context.Context, token string) error {
@@ -24,7 +25,7 @@ func (s *subscriptionService) Unsubscribe(ctx context.Context, token string) err
 func (s *subscriptionService) findSubscriptionByUnsubscribeToken(ctx context.Context, token string) (*domain.Subscription, error) {
 	sub, err := s.subscriptionRepository.FindByUnsubscribeToken(ctx, token)
 	if err != nil {
-		if errors.Is(err, domain.ErrNotFound) {
+		if errors.Is(err, shared.ErrNotFound) {
 			return nil, fmt.Errorf("unsubscribe token not found: %w", ErrTokenNotFound)
 		}
 
@@ -36,7 +37,7 @@ func (s *subscriptionService) findSubscriptionByUnsubscribeToken(ctx context.Con
 
 func (s *subscriptionService) deleteSubscriptionByUnsubscribeToken(ctx context.Context, token string) error {
 	if err := s.subscriptionRepository.DeleteByUnsubscribeToken(ctx, token); err != nil {
-		if errors.Is(err, domain.ErrNotFound) {
+		if errors.Is(err, shared.ErrNotFound) {
 			return fmt.Errorf("unsubscribe token not found: %w", ErrTokenNotFound)
 		}
 
@@ -57,7 +58,7 @@ func (s *subscriptionService) cleanupRepositoryIfOrphaned(ctx context.Context, r
 	}
 
 	if err := s.repositoryRepository.DeleteByID(ctx, repositoryID); err != nil {
-		if errors.Is(err, domain.ErrNotFound) {
+		if errors.Is(err, shared.ErrNotFound) {
 			return fmt.Errorf("repository %d disappeared during unsubscribe cleanup: %w", repositoryID, err)
 		}
 

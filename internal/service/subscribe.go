@@ -7,6 +7,8 @@ import (
 	"strings"
 
 	"GithubReleaseNotificationAPI/internal/domain"
+	githubclient "GithubReleaseNotificationAPI/internal/github"
+	"GithubReleaseNotificationAPI/internal/shared"
 )
 
 const maxTokenGenerationAttempts = 5
@@ -51,11 +53,11 @@ func normalizeSubscriptionInput(email, repo string) (string, string, error) {
 func (s *subscriptionService) verifyRepositoryExists(ctx context.Context, repo string) error {
 	if err := s.githubClient.CheckRepo(ctx, repo); err != nil {
 		switch {
-		case errors.Is(err, domain.ErrNotFound):
+		case errors.Is(err, shared.ErrNotFound):
 			return ErrRepoNotFound
-		case errors.Is(err, domain.ErrRateLimited):
+		case errors.Is(err, githubclient.ErrRateLimited):
 			return ErrTooMuchRequests
-		case errors.Is(err, domain.ErrUnauthorized):
+		case errors.Is(err, githubclient.ErrUnauthorized):
 			return ErrGitHubUnauthorized
 		default:
 			return fmt.Errorf("github repo check failed: %w", err)
@@ -71,7 +73,7 @@ func (s *subscriptionService) ensureRepository(ctx context.Context, repo string)
 		return repoDomain, nil
 	}
 
-	if !errors.Is(err, domain.ErrNotFound) {
+	if !errors.Is(err, shared.ErrNotFound) {
 		return nil, fmt.Errorf("find repository %s: %w", repo, err)
 	}
 
@@ -84,7 +86,7 @@ func (s *subscriptionService) createRepositoryWithConflictRecovery(ctx context.C
 		return repoDomain, nil
 	}
 
-	if !errors.Is(err, domain.ErrAlreadyExists) {
+	if !errors.Is(err, shared.ErrAlreadyExists) {
 		return nil, fmt.Errorf("create repository %s: %w", repo, err)
 	}
 
@@ -104,12 +106,12 @@ func (s *subscriptionService) createPendingSubscription(ctx context.Context, ema
 		}
 
 		err = s.subscriptionRepository.Create(ctx, *sub)
-		if errors.Is(err, domain.ErrTokenConflict) {
+		if errors.Is(err, shared.ErrTokenConflict) {
 			continue
 		}
 
 		if err != nil {
-			if errors.Is(err, domain.ErrAlreadyExists) {
+			if errors.Is(err, shared.ErrAlreadyExists) {
 				return "", ErrSubscriptionAlreadyExists
 			}
 
@@ -119,7 +121,7 @@ func (s *subscriptionService) createPendingSubscription(ctx context.Context, ema
 		return sub.ConfirmToken, nil
 	}
 
-	return "", fmt.Errorf("create subscription tokens conflict after retries: %w", domain.ErrTokenConflict)
+	return "", fmt.Errorf("create subscription tokens conflict after retries: %w", shared.ErrTokenConflict)
 }
 
 func (s *subscriptionService) sendConfirmationEmail(email, repo, token string) error {

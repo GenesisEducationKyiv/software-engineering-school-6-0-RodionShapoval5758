@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"GithubReleaseNotificationAPI/internal/domain"
+	"GithubReleaseNotificationAPI/internal/shared"
 )
 
 const (
@@ -126,18 +127,18 @@ func determineResponse(resp *http.Response) error {
 	case http.StatusOK:
 		return nil
 	case http.StatusNotFound:
-		return domain.ErrNotFound
+		return shared.ErrNotFound
 	case http.StatusUnauthorized:
-		return domain.ErrUnauthorized
+		return ErrUnauthorized
 	case http.StatusForbidden, http.StatusTooManyRequests:
 		if resp.Header.Get("X-Ratelimit-Remaining") == "0" || resp.Header.Get("Retry-After") != "" {
-			return domain.ErrRateLimited
+			return ErrRateLimited
 		}
 
-		return fmt.Errorf("%w: status %d", domain.ErrUnexpectedResponse, resp.StatusCode)
+		return fmt.Errorf("%w: status %d", ErrUnexpectedResponse, resp.StatusCode)
 	case http.StatusMovedPermanently:
-		return fmt.Errorf("%w: status %d", domain.ErrUnexpectedResponse, resp.StatusCode)
+		return fmt.Errorf("%w: status %d", ErrUnexpectedResponse, resp.StatusCode)
 	default:
-		return fmt.Errorf("%w: status %d", domain.ErrUnexpectedResponse, resp.StatusCode)
+		return fmt.Errorf("%w: status %d", ErrUnexpectedResponse, resp.StatusCode)
 	}
 }

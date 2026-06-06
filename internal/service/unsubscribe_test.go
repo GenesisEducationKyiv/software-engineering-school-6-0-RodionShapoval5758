@@ -6,12 +6,13 @@ import (
 
 	"GithubReleaseNotificationAPI/internal/domain"
 	"GithubReleaseNotificationAPI/internal/service"
+	"GithubReleaseNotificationAPI/internal/shared"
 
 	"github.com/stretchr/testify/mock"
 )
 
 func (s *SubscriptionServiceTestSuite) TestUnsubscribe_TokenNotFound() {
-	s.subRepo.On("FindByUnsubscribeToken", mock.Anything, "token123").Return(nil, domain.ErrNotFound)
+	s.subRepo.On("FindByUnsubscribeToken", mock.Anything, "token123").Return(nil, shared.ErrNotFound)
 
 	err := s.svc.Unsubscribe(context.Background(), "token123")
 
@@ -31,7 +32,7 @@ func (s *SubscriptionServiceTestSuite) TestUnsubscribe_FindDBError() {
 func (s *SubscriptionServiceTestSuite) TestUnsubscribe_DeleteTokenNotFound() {
 	sub := &domain.Subscription{RepositoryID: 1}
 	s.subRepo.On("FindByUnsubscribeToken", mock.Anything, "token123").Return(sub, nil)
-	s.subRepo.On("DeleteByUnsubscribeToken", mock.Anything, "token123").Return(domain.ErrNotFound)
+	s.subRepo.On("DeleteByUnsubscribeToken", mock.Anything, "token123").Return(shared.ErrNotFound)
 
 	err := s.svc.Unsubscribe(context.Background(), "token123")
 
@@ -93,7 +94,7 @@ func (s *SubscriptionServiceTestSuite) TestUnsubscribe_OrphanCleanup_RepoNotFoun
 	s.subRepo.On("FindByUnsubscribeToken", mock.Anything, "token123").Return(sub, nil)
 	s.subRepo.On("DeleteByUnsubscribeToken", mock.Anything, "token123").Return(nil)
 	s.subRepo.On("HasAnyByRepositoryID", mock.Anything, int64(1)).Return(false, nil)
-	s.repoRepo.On("DeleteByID", mock.Anything, int64(1)).Return(domain.ErrNotFound)
+	s.repoRepo.On("DeleteByID", mock.Anything, int64(1)).Return(shared.ErrNotFound)
 
 	err := s.svc.Unsubscribe(context.Background(), "token123")
 
