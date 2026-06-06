@@ -27,7 +27,4 @@ setup.ilm.enabled: false
 
 setup.template.enabled: false
 
-setup.kibana:
-  host: "kibana:5601"
-
 logging.level: info
