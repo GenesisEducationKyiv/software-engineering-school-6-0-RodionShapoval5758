@@ -1,35 +1,23 @@
-package watcher
+package monitoring
 
 import (
 	"context"
 	"log/slog"
 
 	"GithubReleaseNotificationAPI/internal/catalog"
-	"GithubReleaseNotificationAPI/internal/domain"
 	"GithubReleaseNotificationAPI/internal/github"
 	"GithubReleaseNotificationAPI/internal/notification"
 )
 
-type smtpClient interface {
-	SendReleaseEmails(recipients []notification.ReleaseRecipient, release notification.ReleaseInfo) error
-}
-
-type subscriptionRepository interface {
-	ListConfirmedByRepositoryID(ctx context.Context, repositoryID int64) ([]domain.Subscription, error)
-}
-
 type ReleaseNotifier struct {
-	smtpClient             smtpClient
-	subscriptionRepository subscriptionRepository
+	mailer           mailer
+	subscriberReader subscriberReader
 }
 
-func NewReleaseNotifier(
-	smtpClient smtpClient,
-	subscriptionRepository subscriptionRepository,
-) *ReleaseNotifier {
+func NewReleaseNotifier(mailer mailer, subscriberReader subscriberReader) *ReleaseNotifier {
 	return &ReleaseNotifier{
-		smtpClient:             smtpClient,
-		subscriptionRepository: subscriptionRepository,
+		mailer:           mailer,
+		subscriberReader: subscriberReader,
 	}
 }
 
@@ -38,7 +26,7 @@ func (n *ReleaseNotifier) NotifyConfirmedSubscribers(
 	repo catalog.Repository,
 	release *github.Release,
 ) error {
-	subscriptions, err := n.subscriptionRepository.ListConfirmedByRepositoryID(ctx, repo.ID)
+	subscriptions, err := n.subscriberReader.ListConfirmedByRepositoryID(ctx, repo.ID)
 	if err != nil {
 		return err
 	}
@@ -62,7 +50,7 @@ func (n *ReleaseNotifier) NotifyConfirmedSubscribers(
 		}
 	}
 
-	return n.smtpClient.SendReleaseEmails(recipients, notification.ReleaseInfo{
+	return n.mailer.SendReleaseEmails(recipients, notification.ReleaseInfo{
 		Tag:  release.Tag,
 		Name: release.Name,
 		URL:  release.URL,

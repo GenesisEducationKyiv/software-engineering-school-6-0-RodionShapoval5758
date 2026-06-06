@@ -11,6 +11,7 @@ import (
 	"syscall"
 	"time"
 
+	"GithubReleaseNotificationAPI/internal/catalog"
 	"GithubReleaseNotificationAPI/internal/config"
 	"GithubReleaseNotificationAPI/internal/db"
 	"GithubReleaseNotificationAPI/internal/github"
@@ -64,6 +65,7 @@ func run() error {
 
 	subscriptionRepository := store.NewSubscriptionRepository(dbPool)
 	repositoryRepository := store.NewRepoRepository(dbPool)
+	catalogService := catalog.New(dbPool)
 
 	githubClient := github.NewGithubClient(http.DefaultClient, &cfg.GithubToken)
 
@@ -107,7 +109,7 @@ func run() error {
 
 	go appMetrics.CollectDBStats(shutdownSignalCtx, dbPool, 15*time.Second)
 	releaseNotifier := watcher.NewReleaseNotifier(smtpClient, subscriptionRepository)
-	worker := watcher.NewWorker(githubClient, repositoryRepository, releaseNotifier, appMetrics)
+	worker := watcher.NewWorker(githubClient, catalogService, releaseNotifier, appMetrics)
 
 	go func() {
 		if err := worker.Start(shutdownSignalCtx, 25*time.Second); err != nil {

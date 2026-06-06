@@ -4,15 +4,17 @@ import (
 	"context"
 	"errors"
 
+	"GithubReleaseNotificationAPI/internal/catalog"
 	"GithubReleaseNotificationAPI/internal/domain"
+	"GithubReleaseNotificationAPI/internal/github"
 	"GithubReleaseNotificationAPI/internal/notification"
 
 	"github.com/stretchr/testify/mock"
 )
 
 func (s *WatcherTestSuite) TestReleaseNotifier_ListError() {
-	repo := domain.Repository{ID: 1, FullName: "owner/repo"}
-	release := &domain.Release{Tag: "v1.0.0"}
+	repo := catalog.Repository{ID: 1, FullName: "owner/repo"}
+	release := &github.Release{Tag: "v1.0.0"}
 
 	s.subRepo.On("ListConfirmedByRepositoryID", mock.Anything, int64(1)).
 		Return(nil, errors.New("db error"))
@@ -24,8 +26,8 @@ func (s *WatcherTestSuite) TestReleaseNotifier_ListError() {
 }
 
 func (s *WatcherTestSuite) TestReleaseNotifier_NoSubscribers() {
-	repo := domain.Repository{ID: 1, FullName: "owner/repo"}
-	release := &domain.Release{Tag: "v1.0.0"}
+	repo := catalog.Repository{ID: 1, FullName: "owner/repo"}
+	release := &github.Release{Tag: "v1.0.0"}
 
 	s.subRepo.On("ListConfirmedByRepositoryID", mock.Anything, int64(1)).
 		Return([]domain.Subscription{}, nil)
@@ -37,8 +39,8 @@ func (s *WatcherTestSuite) TestReleaseNotifier_NoSubscribers() {
 }
 
 func (s *WatcherTestSuite) TestReleaseNotifier_MultipleSubscribers() {
-	repo := domain.Repository{ID: 1, FullName: "owner/repo"}
-	release := &domain.Release{Tag: "v1.0.0", Name: "Release 1", URL: "https://github.com"}
+	repo := catalog.Repository{ID: 1, FullName: "owner/repo"}
+	release := &github.Release{Tag: "v1.0.0", Name: "Release 1", URL: "https://github.com"}
 	subs := []domain.Subscription{
 		{Email: "alice@example.com", UnsubscribeToken: "token-alice"},
 		{Email: "bob@example.com", UnsubscribeToken: "token-bob"},
@@ -60,8 +62,8 @@ func (s *WatcherTestSuite) TestReleaseNotifier_MultipleSubscribers() {
 }
 
 func (s *WatcherTestSuite) TestReleaseNotifier_SMTPError_Propagates() {
-	repo := domain.Repository{ID: 1, FullName: "owner/repo"}
-	release := &domain.Release{Tag: "v1.0.0", Name: "Release 1", URL: "https://github.com"}
+	repo := catalog.Repository{ID: 1, FullName: "owner/repo"}
+	release := &github.Release{Tag: "v1.0.0", Name: "Release 1", URL: "https://github.com"}
 	subs := []domain.Subscription{
 		{Email: "alice@example.com", UnsubscribeToken: "token-alice"},
 		{Email: "bob@example.com", UnsubscribeToken: "token-bob"},

@@ -1,4 +1,4 @@
-package watcher
+package monitoring
 
 import (
 	"context"
@@ -14,44 +14,30 @@ import (
 	"GithubReleaseNotificationAPI/internal/shared"
 )
 
-type scanObserver interface {
-	ObserveScanDuration(seconds float64)
-	IncScanResult(result string)
-}
-
-type githubClient interface {
-	GetLatestTag(ctx context.Context, fullName string) (*github.Release, error)
-}
-
-type repositoryRepository interface {
-	ListTracked(ctx context.Context) ([]catalog.Repository, error)
-	UpdateLastSeenTag(ctx context.Context, repositoryID int64, tag string) error
-}
-
 type releaseNotifier interface {
 	NotifyConfirmedSubscribers(ctx context.Context, repo catalog.Repository, release *github.Release) error
 }
 
 type Worker struct {
-	githubClient         githubClient
-	repositoryRepository repositoryRepository
-	releaseNotifier      releaseNotifier
-	metrics              scanObserver
+	githubClient    githubClient
+	catalogClient   catalogClient
+	releaseNotifier releaseNotifier
+	metrics         scanObserver
 }
 
 const maxConcurrentRepositoryScans = 10
 
 func NewWorker(
 	githubClient githubClient,
-	repositoryRepository repositoryRepository,
+	catalogClient catalogClient,
 	releaseNotifier releaseNotifier,
 	metrics scanObserver,
 ) *Worker {
 	return &Worker{
-		githubClient:         githubClient,
-		repositoryRepository: repositoryRepository,
-		releaseNotifier:      releaseNotifier,
-		metrics:              metrics,
+		githubClient:    githubClient,
+		catalogClient:   catalogClient,
+		releaseNotifier: releaseNotifier,
+		metrics:         metrics,
 	}
 }
 
@@ -95,7 +81,7 @@ func (w *Worker) runOneScan(ctx context.Context) error {
 
 	logger := slog.Default().With("scan_id", idgen.New())
 
-	repositories, err := w.repositoryRepository.ListTracked(scanCtx)
+	repositories, err := w.catalogClient.ListTracked(scanCtx)
 	if err != nil {
 		if errors.Is(err, context.Canceled) {
 			return nil
@@ -212,7 +198,7 @@ func (w *Worker) processRepository(ctx context.Context, repo catalog.Repository,
 		"tag", release.Tag,
 	)
 
-	if err := w.repositoryRepository.UpdateLastSeenTag(ctx, repo.ID, release.Tag); err != nil {
+	if err := w.catalogClient.UpdateLastSeenTag(ctx, repo.ID, release.Tag); err != nil {
 		return err
 	}
 

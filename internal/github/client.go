@@ -9,7 +9,6 @@ import (
 	"strings"
 	"time"
 
-	"GithubReleaseNotificationAPI/internal/domain"
 	"GithubReleaseNotificationAPI/internal/shared"
 )
 
@@ -61,7 +60,7 @@ func (s *Service) CheckRepo(ctx context.Context, fullName string) error {
 	return nil
 }
 
-func (s *Service) GetLatestTag(ctx context.Context, fullName string) (*domain.Release, error) {
+func (s *Service) GetLatestTag(ctx context.Context, fullName string) (*Release, error) {
 	ctx, cancel := context.WithTimeout(ctx, 5*time.Second)
 	defer cancel()
 
@@ -113,8 +112,8 @@ func (s *Service) doGet(ctx context.Context, path string) (*http.Response, error
 	return resp, nil
 }
 
-func (r latestReleaseResponse) toDomain() *domain.Release {
-	return &domain.Release{
+func (r latestReleaseResponse) toDomain() *Release {
+	return &Release{
 		Tag:         r.TagName,
 		Name:        r.Name,
 		URL:         r.HTMLURL,
