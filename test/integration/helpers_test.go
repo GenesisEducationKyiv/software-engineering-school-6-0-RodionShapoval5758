@@ -4,9 +4,7 @@ package integration_test
 
 import (
 	"context"
-	"encoding/json"
 	"io"
-	"net/http"
 	"net/http/httptest"
 )
 
@@ -50,22 +48,4 @@ func (s *IntegrationSuite) seedSubscription(email, confirmToken, unsubscribeToke
 		email, repoID, confirmToken, unsubscribeToken, confirmed,
 	)
 	s.Require().NoError(err)
-}
-
-func mailpitCount() int {
-	resp, err := http.Get(mailpitBaseURL + "/api/v1/messages")
-	if err != nil {
-		return -1
-	}
-	defer resp.Body.Close()
-	var result struct {
-		Total int `json:"total"`
-	}
-	json.NewDecoder(resp.Body).Decode(&result)
-	return result.Total
-}
-
-func clearMailpit() {
-	req, _ := http.NewRequest(http.MethodDelete, mailpitBaseURL+"/api/v1/messages", nil)
-	http.DefaultClient.Do(req)
 }

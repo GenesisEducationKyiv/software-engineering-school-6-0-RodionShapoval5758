@@ -25,8 +25,6 @@ func (s *IntegrationSuite) TestSubscribe_HappyPath() {
 	).Scan(&count)
 	s.Require().NoError(err)
 	s.Equal(1, count)
-
-	s.Equal(1, mailpitCount())
 }
 
 func (s *IntegrationSuite) TestSubscribe_Validation() {

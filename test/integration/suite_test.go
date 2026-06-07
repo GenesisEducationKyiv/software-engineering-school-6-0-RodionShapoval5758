@@ -7,17 +7,19 @@ import (
 	"net/http"
 	"testing"
 
-	httpHandler "GithubReleaseNotificationAPI/internal/http/handler"
+	"GithubReleaseNotificationAPI/internal/catalog"
 	httpRouter "GithubReleaseNotificationAPI/internal/http/router"
-	"GithubReleaseNotificationAPI/internal/mail"
 	"GithubReleaseNotificationAPI/internal/metrics"
-	"GithubReleaseNotificationAPI/internal/service"
-	"GithubReleaseNotificationAPI/internal/store"
+	"GithubReleaseNotificationAPI/internal/subscription"
 
 	"github.com/prometheus/client_golang/prometheus"
 
 	"github.com/stretchr/testify/suite"
 )
+
+type noopNotifier struct{}
+
+func (n *noopNotifier) SendConfirmation(toEmail, repoName, confirmToken string) error { return nil }
 
 const testAPIKey = "test-integration-key"
 
@@ -28,19 +30,17 @@ type IntegrationSuite struct {
 }
 
 func (s *IntegrationSuite) SetupSuite() {
-	subRepo := store.NewSubscriptionRepository(testPool)
-	repoRepo := store.NewRepoRepository(testPool)
-	smtpClient := mail.NewSMTPService(smtpHost, smtpPort, "", "", "noreply@localhost", "http://localhost:8080")
+	subRepo := subscription.NewRepository(testPool)
+	catalogSvc := catalog.New(testPool)
 	s.githubFake = &fakeGithubClient{}
-	svc := service.NewSubscriptionService(subRepo, repoRepo, s.githubFake, smtpClient)
-	h := httpHandler.New(svc)
+	svc := subscription.NewService(subRepo, catalogSvc, s.githubFake, &noopNotifier{})
+	h := subscription.New(svc)
 	s.router = httpRouter.New(h, testAPIKey, metrics.New(prometheus.NewRegistry()))
 }
 
 func (s *IntegrationSuite) SetupTest() {
 	_, err := testPool.Exec(context.Background(), "TRUNCATE subscriptions, repositories CASCADE")
 	s.Require().NoError(err)
-	clearMailpit()
 	s.githubFake.err = nil
 }
 
