@@ -32,8 +32,7 @@ func (r *PostgresSubscriptionRepository) Create(ctx context.Context, subscriptio
 		subscription.UnsubscribeToken,
 	)
 	if err != nil {
-		var pgErr *pgconn.PgError
-		if errors.As(err, &pgErr) && pgErr.Code == pgerrcode.UniqueViolation {
+		if pgErr, ok := errors.AsType[*pgconn.PgError](err); ok && pgErr.Code == pgerrcode.UniqueViolation {
 			switch pgErr.ConstraintName {
 			case "subscriptions_email_repository_id_key":
 				return shared.ErrAlreadyExists

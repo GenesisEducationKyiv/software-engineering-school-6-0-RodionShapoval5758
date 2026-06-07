@@ -33,8 +33,7 @@ func (r *PostgresRepoRepository) Create(ctx context.Context, repositoryName stri
 		&repo.UpdatedAt,
 	)
 	if err != nil {
-		var pgerr *pgconn.PgError
-		if errors.As(err, &pgerr) && pgerr.Code == pgerrcode.UniqueViolation {
+		if pgerr, ok := errors.AsType[*pgconn.PgError](err); ok && pgerr.Code == pgerrcode.UniqueViolation {
 			return nil, shared.ErrAlreadyExists
 		}
 
