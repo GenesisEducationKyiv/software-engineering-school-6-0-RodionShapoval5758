@@ -5,6 +5,15 @@ x-logging: &default-logging
     max-file: "3"
 
 services:
+  nats:
+    image: nats:2-alpine
+    container_name: github-release-notification-nats
+    restart: unless-stopped
+    logging: *default-logging
+    command: ["-js"]
+    ports:
+      - "4222:4222"
+
   nginx:
     build:
       context: .
@@ -15,6 +24,8 @@ services:
     depends_on:
       app:
         condition: service_healthy
+      notification:
+        condition: service_started
     ports:
       - "80:80"
 
@@ -28,6 +39,8 @@ services:
         condition: service_healthy
       mailpit:
         condition: service_started
+      nats:
+        condition: service_started
     labels:
       filebeat_collect: "true"
     environment:
@@ -35,18 +48,34 @@ services:
       DATABASE_URL: postgres://postgres:password@postgres_db:5432/github_release_notifications?sslmode=disable
       GITHUB_TOKEN: ${GITHUB_TOKEN}
       API_KEY: ${API_KEY}
-      SMTP_HOST: mailpit
-      SMTP_PORT: "1025"
-      SMTP_USER: ""
-      SMTP_PASSWORD: ""
-      SENDER_EMAIL: noreply@localhost
-      MAIN_URL: http://localhost
+      NATS_URL: nats://nats:4222
     healthcheck:
       test: ["CMD", "/app/healthcheck"]
       interval: 10s
       timeout: 5s
       retries: 5
       start_period: 15s
+
+  notification:
+    build:
+      context: .
+      dockerfile: Dockerfile.notification
+    container_name: github-release-notification-notification
+    restart: unless-stopped
+    logging: *default-logging
+    depends_on:
+      nats:
+        condition: service_started
+      mailpit:
+        condition: service_started
+    environment:
+      NATS_URL: nats://nats:4222
+      SMTP_HOST: mailpit
+      SMTP_PORT: "1025"
+      SMTP_USER: ""
+      SMTP_PASSWORD: ""
+      SENDER_EMAIL: noreply@localhost
+      MAIN_URL: http://localhost
 
   postgres_db:
     image: postgres:16.9
