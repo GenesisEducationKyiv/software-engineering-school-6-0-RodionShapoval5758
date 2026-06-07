@@ -18,9 +18,11 @@ import (
 	httpRouter "GithubReleaseNotificationAPI/internal/http/router"
 	"GithubReleaseNotificationAPI/internal/metrics"
 	"GithubReleaseNotificationAPI/internal/monitoring"
-	"GithubReleaseNotificationAPI/internal/notification"
+	"GithubReleaseNotificationAPI/internal/notifier"
 	"GithubReleaseNotificationAPI/internal/subscription"
 
+	"github.com/nats-io/nats.go"
+	"github.com/nats-io/nats.go/jetstream"
 	"github.com/prometheus/client_golang/prometheus"
 )
 
@@ -85,16 +87,24 @@ func run() error {
 
 	githubClient := github.NewGithubClient(http.DefaultClient, &cfg.GithubToken)
 
-	mailer := notification.NewMailer(
-		cfg.SMTPHost,
-		cfg.SMTPPort,
-		cfg.SMTPUser,
-		cfg.SMTPPass,
-		cfg.FromEmail,
-		cfg.AppBaseURL,
-	)
+	nc, err := nats.Connect(cfg.NATSUrl, nats.Name("github-release-notification-api"))
+	if err != nil {
+		return fmt.Errorf("connect nats: %w", err)
+	}
+	defer func() { _ = nc.Drain() }()
 
-	subService := subscription.NewService(subRepo, catalogService, githubClient, mailer)
+	js, err := jetstream.New(nc)
+	if err != nil {
+		return fmt.Errorf("init jetstream: %w", err)
+	}
+
+	if err := notifier.EnsureStream(initCtx, js); err != nil {
+		return fmt.Errorf("ensure notification stream: %w", err)
+	}
+
+	publisher := notifier.NewPublisher(js)
+
+	subService := subscription.NewService(subRepo, catalogService, githubClient, publisher)
 	subHandler := subscription.New(subService)
 
 	reg := prometheus.NewRegistry()
@@ -120,7 +130,7 @@ func run() error {
 
 	go appMetrics.CollectDBStats(shutdownSignalCtx, dbPool, 15*time.Second)
 
-	releaseNotifier := monitoring.NewReleaseNotifier(mailer, confirmedSubReader{svc: subService})
+	releaseNotifier := monitoring.NewReleaseNotifier(publisher, confirmedSubReader{svc: subService})
 	worker := monitoring.NewWorker(githubClient, catalogService, releaseNotifier, appMetrics)
 
 	go func() {
