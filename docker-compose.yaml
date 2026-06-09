@@ -186,11 +186,11 @@ services:
     ports:
       - "9090:9090"
     command:
-      - "--config.file=/etc/prometheus/prometheus.yml"
+      - "--config.file=/etc/prometheus/prometheus.yaml"
       - "--storage.tsdb.path=/prometheus"
       - "--web.enable-remote-write-receiver"
     volumes:
-      - ./deploy/prometheus/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - ./deploy/prometheus/prometheus.yaml:/etc/prometheus/prometheus.yaml:ro
       - prometheus_data:/prometheus
     depends_on:
       - app
@@ -203,7 +203,7 @@ services:
     logging: *default-logging
     user: root
     volumes:
-      - ./deploy/filebeat/filebeat.yml:/usr/share/filebeat/filebeat.yml:ro
+      - ./deploy/filebeat/filebeat.yaml:/usr/share/filebeat/filebeat.yaml:ro
       - /var/lib/docker/containers:/var/lib/docker/containers:ro
       - /var/run/docker.sock:/var/run/docker.sock:ro
     depends_on:

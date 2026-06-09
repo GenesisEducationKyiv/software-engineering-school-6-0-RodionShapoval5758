@@ -4,7 +4,7 @@ WORKDIR /app
 COPY services/contract/go.mod services/contract/go.sum ./services/contract/
 COPY services/notification/go.mod services/notification/go.sum ./services/notification/
 
-RUN cd contract && go mod download
+RUN cd services/contract && go mod download
 RUN cd services/notification && GOWORK=off go mod download
 
 COPY services/contract/ ./services/contract/
