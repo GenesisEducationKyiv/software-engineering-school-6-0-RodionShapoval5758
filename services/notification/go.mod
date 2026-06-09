@@ -16,4 +16,4 @@ require (
 	golang.org/x/sys v0.43.0 // indirect
 )
 
-replace GithubReleaseNotificationAPI/contract => ../../contract
+replace GithubReleaseNotificationAPI/contract => ../contract

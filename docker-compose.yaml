@@ -17,7 +17,7 @@ services:
   nginx:
     build:
       context: .
-      dockerfile: Dockerfile.nginx
+      dockerfile: build/nginx.Dockerfile
     container_name: github-release-notification-nginx
     restart: unless-stopped
     logging: *default-logging
@@ -30,7 +30,9 @@ services:
       - "80:80"
 
   app:
-    build: .
+    build:
+      context: .
+      dockerfile: build/api.Dockerfile
     container_name: github-release-notification-api
     restart: unless-stopped
     logging: *default-logging
@@ -59,7 +61,7 @@ services:
   notification:
     build:
       context: .
-      dockerfile: Dockerfile.notification
+      dockerfile: build/notification.Dockerfile
     container_name: github-release-notification-notification
     restart: unless-stopped
     logging: *default-logging
@@ -88,7 +90,7 @@ services:
       POSTGRES_DB: github_release_notifications
     volumes:
       - postgres_data:/var/lib/postgresql/data
-      - ./db/init:/docker-entrypoint-initdb.d
+      - ./deploy/db/init:/docker-entrypoint-initdb.d
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U postgres -d github_release_notifications"]
       interval: 5s
@@ -153,7 +155,7 @@ services:
       kibana:
         condition: service_healthy
     volumes:
-      - ./kibana/setup.sh:/setup.sh:ro
+      - ./deploy/kibana/setup.sh:/setup.sh:ro
     entrypoint: ["sh", "/setup.sh"]
     environment:
       KIBANA_URL: http://kibana:5601
@@ -170,8 +172,8 @@ services:
       - GF_SECURITY_ADMIN_USER=rodion
       - GF_SECURITY_ADMIN_PASSWORD=rodion
     volumes:
-      - ./grafana/provisioning:/etc/grafana/provisioning:ro
-      - ./grafana/dashboards:/var/lib/grafana/dashboards:ro
+      - ./deploy/grafana/provisioning:/etc/grafana/provisioning:ro
+      - ./deploy/grafana/dashboards:/var/lib/grafana/dashboards:ro
     depends_on:
       - prometheus
 
@@ -188,7 +190,7 @@ services:
       - "--storage.tsdb.path=/prometheus"
       - "--web.enable-remote-write-receiver"
     volumes:
-      - ./prometheus/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - ./deploy/prometheus/prometheus.yml:/etc/prometheus/prometheus.yml:ro
       - prometheus_data:/prometheus
     depends_on:
       - app
@@ -201,7 +203,7 @@ services:
     logging: *default-logging
     user: root
     volumes:
-      - ./filebeat/filebeat.yml:/usr/share/filebeat/filebeat.yml:ro
+      - ./deploy/filebeat/filebeat.yml:/usr/share/filebeat/filebeat.yml:ro
       - /var/lib/docker/containers:/var/lib/docker/containers:ro
       - /var/run/docker.sock:/var/run/docker.sock:ro
     depends_on:

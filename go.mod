@@ -15,7 +15,7 @@ require (
 	github.com/testcontainers/testcontainers-go/modules/postgres v0.42.0
 )
 
-replace GithubReleaseNotificationAPI/contract => ./contract
+replace GithubReleaseNotificationAPI/contract => ./services/contract
 
 require (
 	dario.cat/mergo v1.0.2 // indirect

@@ -2,6 +2,6 @@ go 1.26
 
 use (
 	.
-	./contract
+	./services/contract
 	./services/notification
 )

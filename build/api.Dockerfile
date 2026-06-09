@@ -1,7 +1,7 @@
 FROM golang:1.26 AS builder
 WORKDIR /app
 COPY go.mod go.sum ./
-COPY contract/ ./contract/
+COPY services/contract/ ./services/contract/
 RUN GOWORK=off go mod download
 
 COPY . .
