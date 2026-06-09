@@ -17,14 +17,8 @@ import (
 )
 
 func main() {
-	logger := slog.New(slog.NewJSONHandler(os.Stdout, &slog.HandlerOptions{
-		ReplaceAttr: func(groups []string, a slog.Attr) slog.Attr {
-			if a.Key == slog.MessageKey {
-				a.Key = "message"
-			}
-			return a
-		},
-	})).With(slog.Group("service", slog.String("name", "notification-service")))
+	logger := slog.New(slog.NewJSONHandler(os.Stdout, nil)).
+		With(slog.Group("service", slog.String("name", "notification-service")))
 	slog.SetDefault(logger)
 
 	if err := run(); err != nil {
