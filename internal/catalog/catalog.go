@@ -30,10 +30,6 @@ func New(pool *pgxpool.Pool) *Service {
 	return &Service{store: store.New(pool)}
 }
 
-func ValidateRepo(repo string) error {
-	return domain.ValidateRepo(repo)
-}
-
 func (s *Service) Ensure(ctx context.Context, fullName string) (int64, error) {
 	repo, err := s.store.FindByFullName(ctx, fullName)
 	if err == nil {
