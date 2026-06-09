@@ -1,11 +1,12 @@
 FROM golang:1.26 AS builder
 WORKDIR /app
 COPY go.mod go.sum ./
-RUN go mod download
+COPY contract/ ./contract/
+RUN GOWORK=off go mod download
 
 COPY . .
-RUN CGO_ENABLED=0 GOOS=linux go build -o api ./cmd/api && \
-    CGO_ENABLED=0 GOOS=linux go build -o healthcheck ./cmd/healthcheck
+RUN GOWORK=off CGO_ENABLED=0 GOOS=linux go build -o api ./cmd/api && \
+    GOWORK=off CGO_ENABLED=0 GOOS=linux go build -o healthcheck ./cmd/healthcheck
 
 FROM debian:bookworm-slim
 WORKDIR /app
