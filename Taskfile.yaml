@@ -46,9 +46,11 @@ tasks:
       - task: test-e2e
 
   test-unit:
-    desc: Run unit tests
+    desc: Run unit tests across all modules
     cmds:
       - go test ./...
+      - cd services/contract && go test ./...
+      - cd services/notification && go test ./...
 
   test-integration:
     desc: Run integration tests

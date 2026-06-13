@@ -18,6 +18,31 @@ services:
     ports:
       - "80:80"
 
+  notification:
+    build:
+      context: .
+      dockerfile: Dockerfile.notification
+    container_name: github-release-notification-notifier
+    restart: unless-stopped
+    logging: *default-logging
+    depends_on:
+      mailpit:
+        condition: service_started
+    environment:
+      PORT: "8081"
+      SMTP_HOST: mailpit
+      SMTP_PORT: "1025"
+      SMTP_USER: ""
+      SMTP_PASSWORD: ""
+      SENDER_EMAIL: noreply@localhost
+      MAIN_URL: http://localhost
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://localhost:8081/healthz || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
+
   app:
     build: .
     container_name: github-release-notification-api
@@ -26,8 +51,8 @@ services:
     depends_on:
       postgres_db:
         condition: service_healthy
-      mailpit:
-        condition: service_started
+      notification:
+        condition: service_healthy
     labels:
       filebeat_collect: "true"
     environment:
@@ -35,12 +60,7 @@ services:
       DATABASE_URL: postgres://postgres:password@postgres_db:5432/github_release_notifications?sslmode=disable
       GITHUB_TOKEN: ${GITHUB_TOKEN}
       API_KEY: ${API_KEY}
-      SMTP_HOST: mailpit
-      SMTP_PORT: "1025"
-      SMTP_USER: ""
-      SMTP_PASSWORD: ""
-      SENDER_EMAIL: noreply@localhost
-      MAIN_URL: http://localhost
+      NOTIFICATION_URL: http://notification:8081
     healthcheck:
       test: ["CMD", "/app/healthcheck"]
       interval: 10s
