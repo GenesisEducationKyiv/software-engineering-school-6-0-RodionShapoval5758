@@ -7,4 +7,4 @@ RUN npm run build
 
 FROM nginx:alpine
 COPY --from=frontend-builder /app/dist /usr/share/nginx/html
-COPY nginx/nginx.conf /etc/nginx/conf.d/default.conf
+COPY deploy/nginx/nginx.conf /etc/nginx/conf.d/default.conf

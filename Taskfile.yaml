@@ -8,14 +8,14 @@ vars:
 
 tasks:
   build:
-    desc: Build images and start core services
+    desc: Build images
     cmds:
-      - docker compose up --build --wait -d
+      - docker compose build
 
   up-core:
     desc: Start core services
     cmds:
-      - docker compose up -d
+      - docker compose up -d --wait
 
   down-core:
     desc: Stop core services
