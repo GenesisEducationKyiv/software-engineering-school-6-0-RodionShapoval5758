@@ -6,7 +6,7 @@ import (
 
 	"GithubReleaseNotificationAPI/internal/catalog"
 	"GithubReleaseNotificationAPI/internal/github"
-	"GithubReleaseNotificationAPI/internal/notification"
+	"GithubReleaseNotificationAPI/internal/notifier"
 )
 
 type ReleaseNotifier struct {
@@ -42,15 +42,15 @@ func (n *ReleaseNotifier) NotifyConfirmedSubscribers(
 		return nil
 	}
 
-	recipients := make([]notification.ReleaseRecipient, len(confirmed))
+	recipients := make([]notifier.ReleaseRecipient, len(confirmed))
 	for i, sub := range confirmed {
-		recipients[i] = notification.ReleaseRecipient{
+		recipients[i] = notifier.ReleaseRecipient{
 			Email:            sub.Email,
 			UnsubscribeToken: sub.UnsubscribeToken,
 		}
 	}
 
-	return n.mailer.SendReleaseEmails(recipients, notification.ReleaseInfo{
+	return n.mailer.SendReleaseEmails(recipients, notifier.ReleaseInfo{
 		Tag:  release.Tag,
 		Name: release.Name,
 		URL:  release.URL,

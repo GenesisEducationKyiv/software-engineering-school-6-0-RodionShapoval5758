@@ -5,7 +5,7 @@ import (
 
 	"GithubReleaseNotificationAPI/internal/catalog"
 	"GithubReleaseNotificationAPI/internal/github"
-	"GithubReleaseNotificationAPI/internal/notification"
+	"GithubReleaseNotificationAPI/internal/notifier"
 )
 
 type ConfirmedSubscriber struct {
@@ -27,7 +27,7 @@ type subscriberReader interface {
 }
 
 type mailer interface {
-	SendReleaseEmails(recipients []notification.ReleaseRecipient, release notification.ReleaseInfo) error
+	SendReleaseEmails(recipients []notifier.ReleaseRecipient, release notifier.ReleaseInfo) error
 }
 
 type scanObserver interface {

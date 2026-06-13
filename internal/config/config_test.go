@@ -11,15 +11,12 @@ import (
 func TestLoadAppliesDefaults(t *testing.T) {
 	clearConfigEnv(t)
 	t.Setenv("DATABASE_URL", "postgres://user:pass@localhost:5432/app")
-	t.Setenv("SMTP_HOST", "localhost")
+	t.Setenv("NOTIFICATION_URL", "http://notification:8081")
 
 	cfg, err := Load()
 	require.NoError(t, err)
 
 	assert.Equal(t, "8080", cfg.Port)
-	assert.Equal(t, "http://localhost:8080", cfg.AppBaseURL)
-	assert.Equal(t, "1025", cfg.SMTPPort)
-	assert.Equal(t, "noreply@localhost", cfg.FromEmail)
 }
 
 func TestLoadValidation(t *testing.T) {
@@ -29,17 +26,14 @@ func TestLoadValidation(t *testing.T) {
 		wantErr error
 	}{
 		{
-			name: "missing database url",
-			env: map[string]string{
-				"SMTP_HOST": "localhost",
-			},
+			name:    "missing database url",
+			env:     map[string]string{},
 			wantErr: ErrMissingDatabaseURL,
 		},
 		{
 			name: "invalid port format",
 			env: map[string]string{
 				"DATABASE_URL": "postgres://user:pass@localhost:5432/app",
-				"SMTP_HOST":    "localhost",
 				"PORT":         "bad-port",
 			},
 			wantErr: ErrInvalidPortFormat,
@@ -48,64 +42,31 @@ func TestLoadValidation(t *testing.T) {
 			name: "invalid port range",
 			env: map[string]string{
 				"DATABASE_URL": "postgres://user:pass@localhost:5432/app",
-				"SMTP_HOST":    "localhost",
 				"PORT":         "99999",
 			},
 			wantErr: ErrInvalidPort,
 		},
 		{
-			name: "invalid main url",
+			name: "missing notification url",
 			env: map[string]string{
 				"DATABASE_URL": "postgres://user:pass@localhost:5432/app",
-				"SMTP_HOST":    "localhost",
-				"MAIN_URL":     "://bad",
 			},
-			wantErr: ErrInvalidMainURL,
+			wantErr: ErrMissingNotificationURL,
 		},
 		{
-			name: "missing smtp host",
+			name: "invalid notification url",
 			env: map[string]string{
-				"DATABASE_URL": "postgres://user:pass@localhost:5432/app",
+				"DATABASE_URL":     "postgres://user:pass@localhost:5432/app",
+				"NOTIFICATION_URL": "://bad",
 			},
-			wantErr: ErrMissingSMTPHost,
-		},
-		{
-			name: "invalid smtp port format",
-			env: map[string]string{
-				"DATABASE_URL": "postgres://user:pass@localhost:5432/app",
-				"SMTP_HOST":    "localhost",
-				"SMTP_PORT":    "bad-port",
-			},
-			wantErr: ErrInvalidSMTPPortFormat,
-		},
-		{
-			name: "invalid smtp port range",
-			env: map[string]string{
-				"DATABASE_URL": "postgres://user:pass@localhost:5432/app",
-				"SMTP_HOST":    "localhost",
-				"SMTP_PORT":    "99999",
-			},
-			wantErr: ErrInvalidSMTPPort,
-		},
-		{
-			name: "smtp auth user without password",
-			env: map[string]string{
-				"DATABASE_URL": "postgres://user:pass@localhost:5432/app",
-				"SMTP_HOST":    "localhost",
-				"SMTP_USER":    "user",
-			},
-			wantErr: ErrInvalidSMTPCredentials,
+			wantErr: ErrInvalidNotificationURL,
 		},
 		{
 			name: "valid explicit config",
 			env: map[string]string{
-				"DATABASE_URL":  "postgres://user:pass@localhost:5432/app",
-				"SMTP_HOST":     "localhost",
-				"PORT":          "9090",
-				"MAIN_URL":      "https://example.com",
-				"SMTP_PORT":     "2525",
-				"SMTP_USER":     "user",
-				"SMTP_PASSWORD": "pass",
+				"DATABASE_URL":     "postgres://user:pass@localhost:5432/app",
+				"PORT":             "9090",
+				"NOTIFICATION_URL": "http://notification:8081",
 			},
 		},
 	}
@@ -135,12 +96,7 @@ func clearConfigEnv(t *testing.T) {
 		"DATABASE_URL",
 		"PORT",
 		"GITHUB_TOKEN",
-		"SMTP_HOST",
-		"SMTP_PORT",
-		"SMTP_USER",
-		"SMTP_PASSWORD",
-		"SENDER_EMAIL",
-		"MAIN_URL",
+		"NOTIFICATION_URL",
 		"API_KEY",
 	} {
 		original, existed := os.LookupEnv(key)
