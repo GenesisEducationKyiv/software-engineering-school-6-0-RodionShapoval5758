@@ -37,7 +37,7 @@ services:
       SENDER_EMAIL: noreply@localhost
       MAIN_URL: http://localhost
     healthcheck:
-      test: ["CMD-SHELL", "wget -qO- http://localhost:8081/healthz || exit 1"]
+      test: ["CMD-SHELL", "curl -sf http://localhost:8081/healthz || exit 1"]
       interval: 10s
       timeout: 5s
       retries: 5
