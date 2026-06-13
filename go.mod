@@ -1,8 +1,9 @@
 module GithubReleaseNotificationAPI
 
-go 1.26
+go 1.26.2
 
 require (
+	GithubReleaseNotificationAPI/contract v0.0.0
 	github.com/go-chi/chi/v5 v5.2.5
 	github.com/golang-migrate/migrate/v4 v4.19.1
 	github.com/jackc/pgerrcode v0.0.0-20250907135507-afb5586c32a6
@@ -80,3 +81,5 @@ require (
 	google.golang.org/protobuf v1.36.8 // indirect
 	gopkg.in/yaml.v3 v3.0.1 // indirect
 )
+
+replace GithubReleaseNotificationAPI/contract => ./services/contract
