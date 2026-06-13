@@ -1,0 +1,81 @@
+graph LR
+    HTTP([HTTP Request])
+    PG[(PostgreSQL)]
+    GH[GitHub API]
+    EMAIL[📧 Email]
+
+    subgraph API["Binary — api"]
+        subgraph APP["internal/app — composition root"]
+            BUILD["Build(cfg)"]
+            ADAPT["ConfirmedSubReader adapter\nSubscription → ConfirmedSubscriber"]
+        end
+
+        subgraph CAT["📦 internal/catalog"]
+            CSVC["catalog.Service\nEnsure · DeleteIfOrphaned\nListTracked · UpdateLastSeenTag"]
+            subgraph CAT_INT["catalog/internal/  🔒  compiler-private"]
+                CATD["domain.Repository"]
+                CATS["store.PostgresRepoRepository"]
+            end
+        end
+
+        subgraph SUB["📦 internal/subscription"]
+            SHDL["Handler\nSubscribe · Confirm · Unsubscribe · List"]
+            SSVC["Service\nports: catalogClient · githubClient\n       notifier · subscriptionRepository"]
+            subgraph SUB_INT["subscription/internal/  🔒  compiler-private"]
+                SUBD["domain.Subscription"]
+                SUBS["store.PostgresSubscriptionRepository"]
+            end
+        end
+
+        subgraph MON["📦 internal/monitoring"]
+            MWORK["Worker — every 25 s · concurrency 10\nports: catalogClient · githubClient\n       releaseNotifier · scanObserver"]
+            MNOTIF["ReleaseNotifier\nports: subscriberReader · mailer"]
+        end
+
+        subgraph NOT["internal/notifier"]
+            PUB["Publisher\nSendConfirmation · SendReleaseEmails\nEnsureStream"]
+        end
+
+        subgraph SHR["internal/shared"]
+            SERR["ErrNotFound · ErrAlreadyExists · ErrTokenConflict"]
+        end
+    end
+
+    subgraph CTR["📦 contract — go module"]
+        CEVT["ConfirmationRequested · ReleasePublished\nStream: NOTIFICATIONS\nnotifications.confirmation  ·  notifications.release"]
+    end
+
+    subgraph NATS["NATS JetStream"]
+        NC["notifications.confirmation"]
+        NR["notifications.release"]
+    end
+
+    subgraph NSVC["Binary — notification-service"]
+        subgraph NCONS["services/notification/consumer"]
+            CONS["Consumer — durable pull\nAck on success\nTerm on bad JSON\nNak on send fail"]
+        end
+        subgraph NMAIL["services/notification/mailer"]
+            SMAIL["SMTPMailer\nSendConfirmation · SendRelease\n+ HTML templates"]
+        end
+    end
+
+    HTTP --> SHDL --> SSVC
+    SSVC -->|catalogClient interface| CSVC
+    SSVC -->|subscriptionRepository interface| SUBS
+    SSVC -->|notifier interface| PUB
+    CSVC --> CATS --> CATD
+    BUILD --> ADAPT
+
+    MWORK -->|releaseNotifier interface| MNOTIF
+    MNOTIF -->|subscriberReader via ADAPT| SSVC
+    MNOTIF -->|mailer interface| PUB
+
+    PUB -->|publish JSON| NC & NR
+    NC & NR --> CONS --> SMAIL --> EMAIL
+
+    NOT    -.->|imports event types| CTR
+    NCONS  -.->|imports event types| CTR
+
+    CATS & SUBS --> PG
+    SSVC  <-->|CheckRepo| GH
+    MWORK <-->|GetLatestTag| GH

@@ -1,9 +1,9 @@
 package router
 
 import (
+	"encoding/json"
 	"net/http"
 
-	"GithubReleaseNotificationAPI/internal/http/handler"
 	"GithubReleaseNotificationAPI/internal/http/middleware"
 	"GithubReleaseNotificationAPI/internal/metrics"
 
@@ -11,30 +11,44 @@ import (
 	chimiddleware "github.com/go-chi/chi/v5/middleware"
 )
 
-func New(handler *handler.Handler, apiKey string, m *metrics.Metrics) http.Handler {
-	router := chi.NewRouter()
+type subscriptionHandler interface {
+	Subscribe(http.ResponseWriter, *http.Request)
+	Confirm(http.ResponseWriter, *http.Request)
+	Unsubscribe(http.ResponseWriter, *http.Request)
+	ListSubscriptions(http.ResponseWriter, *http.Request)
+	ValidateAPIKey(http.ResponseWriter, *http.Request)
+}
 
-	router.Use(middleware.SkipRoutes(middleware.Logger, "/metrics", "/health"))
-	router.Use(middleware.SkipRoutes(middleware.MetricsMiddleware(m), "/metrics"))
-	router.Use(chimiddleware.Recoverer)
+func health(w http.ResponseWriter, _ *http.Request) {
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(http.StatusOK)
+	_ = json.NewEncoder(w).Encode(map[string]string{"status": "ok"})
+}
 
-	router.Handle("/metrics", m.Handler())
-	router.Get("/health", handler.Health)
+func New(handler subscriptionHandler, apiKey string, m *metrics.Metrics) http.Handler {
+	r := chi.NewRouter()
+
+	r.Use(middleware.SkipRoutes(middleware.Logger, "/metrics", "/health"))
+	r.Use(middleware.SkipRoutes(middleware.MetricsMiddleware(m), "/metrics"))
+	r.Use(chimiddleware.Recoverer)
+
+	r.Handle("/metrics", m.Handler())
+	r.Get("/health", health)
 
 	if apiKey != "" {
-		router.Route("/api", func(r chi.Router) {
+		r.Route("/api", func(r chi.Router) {
 			r.Use(middleware.AuthAPIKEY(apiKey))
 			r.Post("/subscribe", handler.Subscribe)
 			r.Get("/subscriptions", handler.ListSubscriptions)
 			r.Get("/validate", handler.ValidateAPIKey)
 		})
 	} else {
-		router.Get("/api/subscriptions", handler.ListSubscriptions)
-		router.Post("/api/subscribe", handler.Subscribe)
+		r.Get("/api/subscriptions", handler.ListSubscriptions)
+		r.Post("/api/subscribe", handler.Subscribe)
 	}
 
-	router.Get("/api/unsubscribe/{token}", handler.Unsubscribe)
-	router.Get("/api/confirm/{token}", handler.Confirm)
+	r.Get("/api/unsubscribe/{token}", handler.Unsubscribe)
+	r.Get("/api/confirm/{token}", handler.Confirm)
 
-	return router
+	return r
 }

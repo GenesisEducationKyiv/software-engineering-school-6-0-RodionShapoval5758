@@ -1,0 +1,52 @@
+graph TD
+    HTTP([HTTP Request])
+    PG[(PostgreSQL)]
+    GH[GitHub API]
+    EMAIL[📧 Email]
+
+    subgraph BINARY["Single Binary — api"]
+        subgraph DOMAIN["internal/domain  ⚠️  god-package — ALL layers import this"]
+            DOM["Repository · Subscription · Release\nErrNotFound · ErrAlreadyExists · ErrTokenConflict\nErrRateLimited · ErrUnauthorized\nValidateEmail · ValidateRepo"]
+        end
+
+        subgraph HDL["internal/http/handler  +  internal/http/models"]
+            H["Handler\nSubscribe · Confirm · Unsubscribe · List"]
+        end
+
+        subgraph SVC["internal/service"]
+            S["subscriptionService\nsubscribe · confirm · unsubscribe · list\nensureRepository — owns repo lifecycle\ncreateRepositoryWithConflictRecovery"]
+        end
+
+        subgraph STR["internal/store"]
+            SS["SubscriptionRepository"]
+            RS["RepoRepository"]
+        end
+
+        subgraph MAIL["internal/mail"]
+            M["SMTPService\nSendConfirmationEmail · SendReleaseEmail"]
+        end
+
+        subgraph WATCH["internal/watcher"]
+            W["Worker — every 25 s"]
+            RN["ReleaseNotifier"]
+        end
+    end
+
+    HTTP --> H --> S
+    S --> SS & RS
+    S   -->|direct SMTP call| M
+    W   -->|new tag found| RN
+    RN  -->|read confirmed subs| SS
+    RN  -->|direct SMTP call| M
+
+    H  -.->|imports| DOM
+    S  -.->|imports| DOM
+    SS -.->|imports| DOM
+    RS -.->|imports| DOM
+    W  -.->|imports| DOM
+    RN -.->|imports| DOM
+
+    SS & RS --> PG
+    M       --> EMAIL
+    S  <-->|CheckRepo| GH
+    W  <-->|GetLatestTag| GH

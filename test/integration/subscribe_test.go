@@ -8,7 +8,7 @@ import (
 	"net/http"
 	"strings"
 
-	"GithubReleaseNotificationAPI/internal/domain"
+	"GithubReleaseNotificationAPI/internal/shared"
 )
 
 func (s *IntegrationSuite) TestSubscribe_HappyPath() {
@@ -25,8 +25,6 @@ func (s *IntegrationSuite) TestSubscribe_HappyPath() {
 	).Scan(&count)
 	s.Require().NoError(err)
 	s.Equal(1, count)
-
-	s.Equal(1, mailpitCount())
 }
 
 func (s *IntegrationSuite) TestSubscribe_Validation() {
@@ -84,7 +82,7 @@ func (s *IntegrationSuite) TestSubscribe_DuplicateSubscription() {
 }
 
 func (s *IntegrationSuite) TestSubscribe_RepoNotFoundOnGitHub() {
-	s.githubFake.err = domain.ErrNotFound
+	s.githubFake.err = shared.ErrNotFound
 
 	body := `{"email":"user@example.com","repo":"owner/repo"}`
 	w := s.do(http.MethodPost, "/api/subscribe", strings.NewReader(body))

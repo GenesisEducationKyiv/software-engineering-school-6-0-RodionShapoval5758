@@ -4,7 +4,6 @@ package integration_test
 
 import (
 	"context"
-	"fmt"
 	"log"
 	"os"
 	"path/filepath"
@@ -14,18 +13,10 @@ import (
 	"GithubReleaseNotificationAPI/internal/db"
 
 	"github.com/jackc/pgx/v5/pgxpool"
-	"github.com/testcontainers/testcontainers-go"
 	tcpostgres "github.com/testcontainers/testcontainers-go/modules/postgres"
-	"github.com/testcontainers/testcontainers-go/wait"
 )
 
 var testPool *pgxpool.Pool
-
-var (
-	mailpitBaseURL string
-	smtpHost       string
-	smtpPort       string
-)
 
 func TestMain(m *testing.M) {
 	os.Exit(run(m))
@@ -42,9 +33,6 @@ func run(m *testing.M) int {
 
 	dsn, pgCleanup := resolvePostgres(ctx)
 	defer pgCleanup()
-
-	mailCleanup := resolveMailpit(ctx)
-	defer mailCleanup()
 
 	if err := db.RunMigrations(dsn); err != nil {
 		log.Fatalf("run migrations: %v", err)
@@ -83,60 +71,6 @@ func resolvePostgres(ctx context.Context) (string, func()) {
 	return dsn, func() {
 		if err := ctr.Terminate(ctx); err != nil {
 			log.Printf("terminate postgres container: %v", err)
-		}
-	}
-}
-
-func resolveMailpit(ctx context.Context) func() {
-	if u := os.Getenv("TEST_MAILPIT_URL"); u != "" {
-		mailpitBaseURL = u
-		smtpHost = os.Getenv("TEST_SMTP_HOST")
-		if smtpHost == "" {
-			smtpHost = "localhost"
-		}
-		smtpPort = os.Getenv("TEST_SMTP_PORT")
-		if smtpPort == "" {
-			smtpPort = "1025"
-		}
-		return func() {}
-	}
-
-	ctr, err := testcontainers.GenericContainer(ctx, testcontainers.GenericContainerRequest{
-		ContainerRequest: testcontainers.ContainerRequest{
-			Image:        "axllent/mailpit",
-			ExposedPorts: []string{"1025/tcp", "8025/tcp"},
-			Env: map[string]string{
-				"MP_SMTP_AUTH_ACCEPT_ANY":     "1",
-				"MP_SMTP_AUTH_ALLOW_INSECURE": "1",
-			},
-			WaitingFor: wait.ForListeningPort("8025/tcp"),
-		},
-		Started: true,
-	})
-	if err != nil {
-		log.Fatalf("start mailpit container: %v", err)
-	}
-
-	host, err := ctr.Host(ctx)
-	if err != nil {
-		log.Fatalf("get mailpit host: %v", err)
-	}
-	httpPort, err := ctr.MappedPort(ctx, "8025/tcp")
-	if err != nil {
-		log.Fatalf("get mailpit HTTP port: %v", err)
-	}
-	smtpMapped, err := ctr.MappedPort(ctx, "1025/tcp")
-	if err != nil {
-		log.Fatalf("get mailpit SMTP port: %v", err)
-	}
-
-	mailpitBaseURL = fmt.Sprintf("http://%s:%s", host, httpPort.Port())
-	smtpHost = host
-	smtpPort = smtpMapped.Port()
-
-	return func() {
-		if err := ctr.Terminate(ctx); err != nil {
-			log.Printf("terminate mailpit container: %v", err)
 		}
 	}
 }

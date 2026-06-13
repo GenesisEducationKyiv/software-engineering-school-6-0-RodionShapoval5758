@@ -9,7 +9,7 @@ import (
 	"strings"
 	"time"
 
-	"GithubReleaseNotificationAPI/internal/domain"
+	"GithubReleaseNotificationAPI/internal/shared"
 )
 
 const (
@@ -60,7 +60,7 @@ func (s *Service) CheckRepo(ctx context.Context, fullName string) error {
 	return nil
 }
 
-func (s *Service) GetLatestTag(ctx context.Context, fullName string) (*domain.Release, error) {
+func (s *Service) GetLatestTag(ctx context.Context, fullName string) (*Release, error) {
 	ctx, cancel := context.WithTimeout(ctx, 5*time.Second)
 	defer cancel()
 
@@ -112,8 +112,8 @@ func (s *Service) doGet(ctx context.Context, path string) (*http.Response, error
 	return resp, nil
 }
 
-func (r latestReleaseResponse) toDomain() *domain.Release {
-	return &domain.Release{
+func (r latestReleaseResponse) toDomain() *Release {
+	return &Release{
 		Tag:         r.TagName,
 		Name:        r.Name,
 		URL:         r.HTMLURL,
@@ -126,18 +126,18 @@ func determineResponse(resp *http.Response) error {
 	case http.StatusOK:
 		return nil
 	case http.StatusNotFound:
-		return domain.ErrNotFound
+		return shared.ErrNotFound
 	case http.StatusUnauthorized:
-		return domain.ErrUnauthorized
+		return ErrUnauthorized
 	case http.StatusForbidden, http.StatusTooManyRequests:
 		if resp.Header.Get("X-Ratelimit-Remaining") == "0" || resp.Header.Get("Retry-After") != "" {
-			return domain.ErrRateLimited
+			return ErrRateLimited
 		}
 
-		return fmt.Errorf("%w: status %d", domain.ErrUnexpectedResponse, resp.StatusCode)
+		return fmt.Errorf("%w: status %d", ErrUnexpectedResponse, resp.StatusCode)
 	case http.StatusMovedPermanently:
-		return fmt.Errorf("%w: status %d", domain.ErrUnexpectedResponse, resp.StatusCode)
+		return fmt.Errorf("%w: status %d", ErrUnexpectedResponse, resp.StatusCode)
 	default:
-		return fmt.Errorf("%w: status %d", domain.ErrUnexpectedResponse, resp.StatusCode)
+		return fmt.Errorf("%w: status %d", ErrUnexpectedResponse, resp.StatusCode)
 	}
 }

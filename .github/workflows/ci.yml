@@ -79,7 +79,7 @@ jobs:
       - name: Start stack
         run: API_KEY=test-api-key docker compose up -d --wait --build
       - name: Run smoke test
-        run: K6_BASE_URL=http://localhost K6_API_KEY=test-api-key make k6-smoke-ci
+        run: k6 run -e BASE_URL=http://localhost -e API_KEY=test-api-key k6/smoke.js
       - name: Teardown stack
         if: always()
         run: docker compose down -v
