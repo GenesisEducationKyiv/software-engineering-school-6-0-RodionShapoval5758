@@ -4,18 +4,6 @@ on:
 env:
   FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
 jobs:
-  build:
-    runs-on: ubuntu-latest
-    steps:
-      - name: Checkout repo
-        uses: actions/checkout@v6
-      - name: Set up Golang
-        uses: actions/setup-go@v6
-        with:
-          go-version-file: go.mod
-      - name: Build
-        run: go build ./...
-
   unit-test:
     runs-on: ubuntu-latest
     steps:
@@ -25,8 +13,12 @@ jobs:
         uses: actions/setup-go@v6
         with:
           go-version-file: go.mod
+      - uses: arduino/setup-task@v2
+        with:
+          version: 3.x
+          repo-token: ${{ secrets.GITHUB_TOKEN }}
       - name: Run unit tests
-        run: go test ./...
+        run: task test-unit
 
   integration-test:
     runs-on: ubuntu-latest
@@ -37,8 +29,12 @@ jobs:
         uses: actions/setup-go@v6
         with:
           go-version-file: go.mod
+      - uses: arduino/setup-task@v2
+        with:
+          version: 3.x
+          repo-token: ${{ secrets.GITHUB_TOKEN }}
       - name: Run integration tests
-        run: go test -tags=integration ./test/integration/... -v
+        run: task test-integration
 
   e2e-test:
     runs-on: ubuntu-latest
@@ -76,10 +72,14 @@ jobs:
       - name: Checkout repo
         uses: actions/checkout@v6
       - uses: grafana/setup-k6-action@v1
+      - uses: arduino/setup-task@v2
+        with:
+          version: 3.x
+          repo-token: ${{ secrets.GITHUB_TOKEN }}
       - name: Start stack
         run: API_KEY=test-api-key docker compose up -d --wait --build
       - name: Run smoke test
-        run: k6 run -e BASE_URL=http://localhost -e API_KEY=test-api-key k6/smoke.js
+        run: task k6-smoke-ci K6_API_KEY=test-api-key
       - name: Teardown stack
         if: always()
         run: docker compose down -v

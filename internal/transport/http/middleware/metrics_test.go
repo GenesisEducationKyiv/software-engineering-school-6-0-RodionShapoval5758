@@ -5,8 +5,8 @@ import (
 	"net/http/httptest"
 	"testing"
 
-	"GithubReleaseNotificationAPI/internal/http/middleware"
 	"GithubReleaseNotificationAPI/internal/metrics"
+	"GithubReleaseNotificationAPI/internal/transport/http/middleware"
 
 	"github.com/go-chi/chi/v5"
 	"github.com/prometheus/client_golang/prometheus"

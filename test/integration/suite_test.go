@@ -8,9 +8,10 @@ import (
 	"testing"
 
 	"GithubReleaseNotificationAPI/internal/catalog"
-	httpRouter "GithubReleaseNotificationAPI/internal/http/router"
 	"GithubReleaseNotificationAPI/internal/metrics"
 	"GithubReleaseNotificationAPI/internal/subscription"
+	"GithubReleaseNotificationAPI/internal/transport/http/handler"
+	httpRouter "GithubReleaseNotificationAPI/internal/transport/http/router"
 
 	"github.com/prometheus/client_golang/prometheus"
 
@@ -34,7 +35,7 @@ func (s *IntegrationSuite) SetupSuite() {
 	catalogSvc := catalog.New(testPool)
 	s.githubFake = &fakeGithubClient{}
 	svc := subscription.NewService(subRepo, catalogSvc, s.githubFake, &noopNotifier{})
-	h := subscription.New(svc)
+	h := handler.New(svc)
 	s.router = httpRouter.New(h, testAPIKey, metrics.New(prometheus.NewRegistry()))
 }
 

@@ -7,10 +7,11 @@ import (
 	"strings"
 	"testing"
 
-	"GithubReleaseNotificationAPI/internal/http/respond"
-	"GithubReleaseNotificationAPI/internal/http/router"
 	"GithubReleaseNotificationAPI/internal/metrics"
 	"GithubReleaseNotificationAPI/internal/subscription"
+	"GithubReleaseNotificationAPI/internal/transport/http/handler"
+	"GithubReleaseNotificationAPI/internal/transport/http/respond"
+	"GithubReleaseNotificationAPI/internal/transport/http/router"
 
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/stretchr/testify/suite"
@@ -56,7 +57,7 @@ type HandlerTestSuite struct {
 
 func (s *HandlerTestSuite) SetupTest() {
 	s.svc = new(mockServiceForHandler)
-	s.router = router.New(subscription.New(s.svc), "", metrics.New(prometheus.NewRegistry()))
+	s.router = router.New(handler.New(s.svc), "", metrics.New(prometheus.NewRegistry()))
 }
 
 func (s *HandlerTestSuite) assertExpectations() {

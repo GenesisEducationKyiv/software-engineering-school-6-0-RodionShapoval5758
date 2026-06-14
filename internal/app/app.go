@@ -12,11 +12,12 @@ import (
 	"GithubReleaseNotificationAPI/internal/config"
 	"GithubReleaseNotificationAPI/internal/db"
 	"GithubReleaseNotificationAPI/internal/github"
-	httpRouter "GithubReleaseNotificationAPI/internal/http/router"
 	"GithubReleaseNotificationAPI/internal/metrics"
 	"GithubReleaseNotificationAPI/internal/monitoring"
 	"GithubReleaseNotificationAPI/internal/notifier"
 	"GithubReleaseNotificationAPI/internal/subscription"
+	"GithubReleaseNotificationAPI/internal/transport/http/handler"
+	httpRouter "GithubReleaseNotificationAPI/internal/transport/http/router"
 
 	"github.com/jackc/pgx/v5/pgxpool"
 	natsgo "github.com/nats-io/nats.go"
@@ -73,7 +74,7 @@ func Build(cfg *config.Config) (*App, error) {
 
 	reg := prometheus.NewRegistry()
 	appMetrics := metrics.New(reg)
-	router := httpRouter.New(subscription.New(subService), cfg.ApiKey, appMetrics)
+	router := httpRouter.New(handler.New(subService), cfg.ApiKey, appMetrics)
 
 	releaseNotifier := monitoring.NewReleaseNotifier(publisher, NewConfirmedSubReader(subService))
 	worker := monitoring.NewWorker(githubClient, catalogService, releaseNotifier, appMetrics)

@@ -1,4 +1,4 @@
-package subscription
+package handler
 
 import (
 	"context"
@@ -7,8 +7,9 @@ import (
 	"net/http"
 	"strings"
 
-	"GithubReleaseNotificationAPI/internal/http/middleware"
-	"GithubReleaseNotificationAPI/internal/http/respond"
+	"GithubReleaseNotificationAPI/internal/subscription"
+	"GithubReleaseNotificationAPI/internal/transport/http/middleware"
+	"GithubReleaseNotificationAPI/internal/transport/http/respond"
 
 	"github.com/go-chi/chi/v5"
 )
@@ -17,7 +18,7 @@ type subscriptionService interface {
 	Subscribe(ctx context.Context, email string, repo string) error
 	Confirm(ctx context.Context, token string) error
 	Unsubscribe(ctx context.Context, token string) error
-	ListByEmail(ctx context.Context, email string) ([]SubscriptionDetails, error)
+	ListByEmail(ctx context.Context, email string) ([]subscription.SubscriptionDetails, error)
 }
 
 type Handler struct {
@@ -40,7 +41,7 @@ type subscriptionResponse struct {
 	LastSeenTag string `json:"last_seen_tag"`
 }
 
-func toResponseSlice(details []SubscriptionDetails) []subscriptionResponse {
+func toResponseSlice(details []subscription.SubscriptionDetails) []subscriptionResponse {
 	responses := make([]subscriptionResponse, 0, len(details))
 	for _, d := range details {
 		tag := d.LastSeenTag
@@ -171,11 +172,11 @@ func decodeSubscriptionRequest(r *http.Request) (subscriptionRequest, error) {
 
 func requireNonEmptySubscriptionFields(email, repo string) error {
 	if email == "" {
-		return errors.New("email is empty")
+		return errors.New("email is required")
 	}
 
 	if repo == "" {
-		return errors.New("repo is empty")
+		return errors.New("repo is required")
 	}
 
 	return nil
@@ -191,7 +192,7 @@ func requireToken(token string, minLen int) error {
 
 func requireNonEmptyEmail(email string) error {
 	if email == "" {
-		return errors.New("empty email")
+		return errors.New("email is required")
 	}
 
 	return nil
@@ -199,19 +200,19 @@ func requireNonEmptyEmail(email string) error {
 
 func handleError(w http.ResponseWriter, r *http.Request, err error) {
 	switch {
-	case errors.Is(err, ErrInvalidEmailFormat):
+	case errors.Is(err, subscription.ErrInvalidEmailFormat):
 		respond.Error(w, http.StatusBadRequest, "Invalid email format")
-	case errors.Is(err, ErrInvalidRepoFormat):
+	case errors.Is(err, subscription.ErrInvalidRepoFormat):
 		respond.Error(w, http.StatusBadRequest, "Invalid repo format")
-	case errors.Is(err, ErrTokenNotFound):
+	case errors.Is(err, subscription.ErrTokenNotFound):
 		respond.Error(w, http.StatusNotFound, "Token not found")
-	case errors.Is(err, ErrRepoNotFound):
+	case errors.Is(err, subscription.ErrRepoNotFound):
 		respond.Error(w, http.StatusNotFound, "Repository not found on GitHub")
-	case errors.Is(err, ErrSubscriptionAlreadyExists):
+	case errors.Is(err, subscription.ErrSubscriptionAlreadyExists):
 		respond.Error(w, http.StatusConflict, "Email already subscribed to this repository")
-	case errors.Is(err, ErrTooMuchRequests):
+	case errors.Is(err, subscription.ErrTooMuchRequests):
 		respond.Error(w, http.StatusTooManyRequests, "Github API request limit is hit")
-	case errors.Is(err, ErrGitHubUnauthorized):
+	case errors.Is(err, subscription.ErrGitHubUnauthorized):
 		respond.Error(w, http.StatusBadGateway, "GitHub API token is invalid or expired")
 	default:
 		middleware.LoggerFromContext(r.Context()).Error("internal server error", "error", err.Error())
