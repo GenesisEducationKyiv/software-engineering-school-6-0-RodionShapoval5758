@@ -48,6 +48,8 @@ func (w *Worker) Run(ctx context.Context) {
 	}
 }
 
+// processPending is all-or-nothing per pgx semantics: any error inside the
+// transaction aborts the entire batch; the caller retries on the next tick.
 func (w *Worker) processPending(ctx context.Context) error {
 	tx, err := w.pool.BeginTx(ctx, pgx.TxOptions{})
 	if err != nil {
@@ -70,26 +72,28 @@ func (w *Worker) processPending(ctx context.Context) error {
 		recs, err := w.recipients.ListConfirmed(ctx, r.RepoID)
 		if err != nil {
 			slog.Error("fanout: list confirmed recipients", "repo_id", r.RepoID, "error", err)
-			continue
+			return err
 		}
 
 		payloads, err := buildEvents(r, recs)
 		if err != nil {
 			slog.Error("fanout: build events", "repo_id", r.RepoID, "error", err)
+			return err
+		}
+
+		if len(payloads) == 0 {
+			processed = append(processed, r.ID)
 			continue
 		}
 
-		failed := false
 		for _, payload := range payloads {
 			if err := outbox.Insert(ctx, tx, contract.SubjectRelease, payload); err != nil {
 				slog.Error("fanout: insert outbox", "repo_id", r.RepoID, "error", err)
-				failed = true
+				return err
 			}
 		}
 
-		if !failed {
-			processed = append(processed, r.ID)
-		}
+		processed = append(processed, r.ID)
 	}
 
 	if len(processed) == 0 {

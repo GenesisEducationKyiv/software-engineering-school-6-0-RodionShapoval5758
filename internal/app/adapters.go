@@ -52,13 +52,13 @@ func (a *recipientListerAdapter) ListConfirmed(ctx context.Context, repoID int64
 	if err != nil {
 		return nil, err
 	}
+	return subsToRecipients(subs), nil
+}
+
+func subsToRecipients(subs []subscription.Subscription) []fanout.Recipient {
 	recs := make([]fanout.Recipient, len(subs))
 	for i, s := range subs {
-		recs[i] = fanout.Recipient{
-			Email:            s.Email,
-			UnsubscribeToken: s.UnsubscribeToken,
-		}
+		recs[i] = fanout.Recipient{Email: s.Email, UnsubscribeToken: s.UnsubscribeToken}
 	}
-
-	return recs, nil
+	return recs
 }
