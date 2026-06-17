@@ -82,7 +82,8 @@ func Build(cfg *config.Config) (*App, error) {
 	internalHandler := handler.NewInternal(subService, cfg.InternalToken)
 	router := httpRouter.New(subHandler, internalHandler, cfg.ApiKey, appMetrics, dbPool, &natsPinger{nc})
 
-	worker := monitoring.NewWorker(githubClient, catalogService, outboxStore, appMetrics)
+	fanoutEnqueuer := &fanoutEnqueuerAdapter{}
+	worker := monitoring.NewWorker(githubClient, catalogService, fanoutEnqueuer, appMetrics)
 
 	return &App{
 		server:     &http.Server{Addr: ":" + cfg.Port, Handler: router},

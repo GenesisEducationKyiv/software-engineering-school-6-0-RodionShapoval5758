@@ -5,6 +5,7 @@ import (
 	"errors"
 
 	"GithubReleaseNotificationAPI/internal/db"
+	"GithubReleaseNotificationAPI/internal/fanout"
 	"GithubReleaseNotificationAPI/internal/outbox"
 
 	natsgo "github.com/nats-io/nats.go"
@@ -26,4 +27,10 @@ type outboxStoreAdapter struct{}
 
 func (o *outboxStoreAdapter) Insert(ctx context.Context, q db.DBTX, subject string, payload []byte) error {
 	return outbox.Insert(ctx, q, subject, payload)
+}
+
+type fanoutEnqueuerAdapter struct{}
+
+func (f *fanoutEnqueuerAdapter) Enqueue(ctx context.Context, q db.DBTX, r fanout.DetectedRelease) error {
+	return fanout.Enqueue(ctx, q, r)
 }

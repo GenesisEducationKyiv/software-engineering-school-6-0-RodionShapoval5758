@@ -5,6 +5,7 @@ import (
 
 	"GithubReleaseNotificationAPI/internal/catalog"
 	"GithubReleaseNotificationAPI/internal/db"
+	"GithubReleaseNotificationAPI/internal/fanout"
 	"GithubReleaseNotificationAPI/internal/github"
 )
 
@@ -18,8 +19,8 @@ type githubClient interface {
 	GetLatestTag(ctx context.Context, fullName string) (*github.Release, error)
 }
 
-type outboxWriter interface {
-	Insert(ctx context.Context, q db.DBTX, subject string, payload []byte) error
+type releaseEnqueuer interface {
+	Enqueue(ctx context.Context, q db.DBTX, r fanout.DetectedRelease) error
 }
 
 type scanObserver interface {

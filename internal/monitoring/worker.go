@@ -2,17 +2,15 @@ package monitoring
 
 import (
 	"context"
-	"encoding/json"
 	"errors"
-	"fmt"
 	"log/slog"
 	"sync"
 	"sync/atomic"
 	"time"
 
-	"GithubReleaseNotificationAPI/contract"
 	"GithubReleaseNotificationAPI/internal/catalog"
 	"GithubReleaseNotificationAPI/internal/db"
+	"GithubReleaseNotificationAPI/internal/fanout"
 	"GithubReleaseNotificationAPI/internal/github"
 	"GithubReleaseNotificationAPI/internal/idgen"
 	"GithubReleaseNotificationAPI/internal/shared"
@@ -21,7 +19,7 @@ import (
 type Worker struct {
 	githubClient  githubClient
 	catalogClient catalogClient
-	outbox        outboxWriter
+	enqueuer      releaseEnqueuer
 	metrics       scanObserver
 }
 
@@ -30,13 +28,13 @@ const maxConcurrentRepositoryScans = 10
 func NewWorker(
 	githubClient githubClient,
 	catalogClient catalogClient,
-	outbox outboxWriter,
+	enqueuer releaseEnqueuer,
 	metrics scanObserver,
 ) *Worker {
 	return &Worker{
 		githubClient:  githubClient,
 		catalogClient: catalogClient,
-		outbox:        outbox,
+		enqueuer:      enqueuer,
 		metrics:       metrics,
 	}
 }
@@ -185,6 +183,7 @@ func (w *Worker) processRepository(ctx context.Context, repo catalog.Repository,
 			"repository", repo.FullName,
 			"tag", release.Tag,
 		)
+
 		return nil
 	}
 
@@ -195,21 +194,16 @@ func (w *Worker) processRepository(ctx context.Context, repo catalog.Repository,
 		"tag", release.Tag,
 	)
 
-	payload, err := json.Marshal(contract.ReleaseDetected{
+	dr := fanout.DetectedRelease{
 		RepoID:      repo.ID,
 		RepoName:    repo.FullName,
 		ReleaseTag:  release.Tag,
 		ReleaseName: release.Name,
 		ReleaseURL:  release.URL,
-	})
-	if err != nil {
-		return fmt.Errorf("marshal release event: %w", err)
 	}
 
-	// Advance the tag and enqueue the release event atomically.
-	// If either write fails the tx rolls back: no tag advance, no event → next scan retries.
 	return w.catalogClient.UpdateLastSeenTagAtomic(ctx, repo.ID, release.Tag, func(ctx context.Context, q db.DBTX) error {
-		return w.outbox.Insert(ctx, q, contract.SubjectRelease, payload)
+		return w.enqueuer.Enqueue(ctx, q, dr)
 	})
 }
 
