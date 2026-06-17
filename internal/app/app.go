@@ -11,6 +11,7 @@ import (
 	"GithubReleaseNotificationAPI/internal/catalog"
 	"GithubReleaseNotificationAPI/internal/config"
 	"GithubReleaseNotificationAPI/internal/db"
+	"GithubReleaseNotificationAPI/internal/fanout"
 	"GithubReleaseNotificationAPI/internal/github"
 	"GithubReleaseNotificationAPI/internal/metrics"
 	"GithubReleaseNotificationAPI/internal/monitoring"
@@ -30,6 +31,7 @@ type App struct {
 	server     *http.Server
 	worker     *monitoring.Worker
 	relay      *outbox.Relay
+	fanout     *fanout.Worker
 	appMetrics *metrics.Metrics
 	dbPool     *pgxpool.Pool
 	nc         *natsgo.Conn
@@ -83,11 +85,13 @@ func Build(cfg *config.Config) (*App, error) {
 
 	fanoutEnqueuer := &fanoutEnqueuerAdapter{}
 	worker := monitoring.NewWorker(githubClient, catalogService, fanoutEnqueuer, appMetrics)
+	fanoutWorker := fanout.NewWorker(dbPool, &recipientListerAdapter{subService})
 
 	return &App{
 		server:     &http.Server{Addr: ":" + cfg.Port, Handler: router},
 		worker:     worker,
 		relay:      outboxRelay,
+		fanout:     fanoutWorker,
 		appMetrics: appMetrics,
 		dbPool:     dbPool,
 		nc:         nc,
@@ -109,6 +113,7 @@ func (a *App) Serve(ctx context.Context) error {
 
 	go a.appMetrics.CollectDBStats(ctx, a.dbPool, 15*time.Second)
 	go a.relay.Run(ctx)
+	go a.fanout.Run(ctx)
 	go func() {
 		if err := a.worker.Start(ctx, 25*time.Second); err != nil {
 			slog.Error("worker failed", "error", err)

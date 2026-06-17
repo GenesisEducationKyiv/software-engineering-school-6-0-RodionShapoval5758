@@ -37,7 +37,7 @@ func (c *Consumer) Start(ctx context.Context) error {
 	}
 
 	cc, err := cons.Consume(func(msg jetstream.Msg) {
-		ack, term := processMessage(ctx, msg.Subject(), msg.Data(), c.mailer)
+		ack, term := processMessage(msg.Subject(), msg.Data(), c.mailer)
 		switch {
 		case term:
 			if err := msg.Term(); err != nil {
@@ -66,7 +66,7 @@ func (c *Consumer) Start(ctx context.Context) error {
 // Returns (ack=true, term=false) on success or unknown subject,
 // (ack=false, term=true) on unmarshal failure,
 // (ack=false, term=false) on transient failure (triggers Nak/redeliver).
-func processMessage(ctx context.Context, subject string, data []byte, m Mailer) (ack bool, term bool) {
+func processMessage(subject string, data []byte, m Mailer) (ack bool, term bool) {
 	switch subject {
 	case contract.SubjectConfirmation:
 		var ev contract.ConfirmationRequested

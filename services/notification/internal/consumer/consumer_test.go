@@ -1,7 +1,6 @@
 package consumer
 
 import (
-	"context"
 	"encoding/json"
 	"errors"
 	"testing"
@@ -38,7 +37,7 @@ func TestProcessMessage_Confirmation(t *testing.T) {
 	data, _ := json.Marshal(ev)
 
 	m := &stubMailer{}
-	ack, term := processMessage(context.Background(), contract.SubjectConfirmation, data, m)
+	ack, term := processMessage(contract.SubjectConfirmation, data, m)
 
 	if !ack || term {
 		t.Fatalf("expected ack=true term=false, got ack=%v term=%v", ack, term)
@@ -62,7 +61,7 @@ func TestProcessMessage_Release(t *testing.T) {
 	data, _ := json.Marshal(ev)
 
 	m := &stubMailer{}
-	ack, term := processMessage(context.Background(), contract.SubjectRelease, data, m)
+	ack, term := processMessage(contract.SubjectRelease, data, m)
 
 	if !ack || term {
 		t.Fatalf("expected ack=true term=false, got ack=%v term=%v", ack, term)
@@ -81,7 +80,7 @@ func TestProcessMessage_SendConfirmationFailure(t *testing.T) {
 	data, _ := json.Marshal(ev)
 
 	m := &stubMailer{err: errors.New("smtp down")}
-	ack, term := processMessage(context.Background(), contract.SubjectConfirmation, data, m)
+	ack, term := processMessage(contract.SubjectConfirmation, data, m)
 
 	if ack || term {
 		t.Fatalf("expected ack=false term=false on send failure, got ack=%v term=%v", ack, term)
@@ -99,7 +98,7 @@ func TestProcessMessage_SendReleaseFailure(t *testing.T) {
 	data, _ := json.Marshal(ev)
 
 	m := &stubMailer{err: errors.New("smtp down")}
-	ack, term := processMessage(context.Background(), contract.SubjectRelease, data, m)
+	ack, term := processMessage(contract.SubjectRelease, data, m)
 
 	if ack || term {
 		t.Fatalf("expected ack=false term=false on send failure, got ack=%v term=%v", ack, term)
@@ -108,7 +107,7 @@ func TestProcessMessage_SendReleaseFailure(t *testing.T) {
 
 func TestProcessMessage_BadJSONConfirmation(t *testing.T) {
 	m := &stubMailer{}
-	ack, term := processMessage(context.Background(), contract.SubjectConfirmation, []byte("not-json"), m)
+	ack, term := processMessage(contract.SubjectConfirmation, []byte("not-json"), m)
 
 	if ack || !term {
 		t.Fatalf("expected ack=false term=true on bad JSON, got ack=%v term=%v", ack, term)
@@ -120,7 +119,7 @@ func TestProcessMessage_BadJSONConfirmation(t *testing.T) {
 
 func TestProcessMessage_BadJSONRelease(t *testing.T) {
 	m := &stubMailer{}
-	ack, term := processMessage(context.Background(), contract.SubjectRelease, []byte("{bad"), m)
+	ack, term := processMessage(contract.SubjectRelease, []byte("{bad"), m)
 
 	if ack || !term {
 		t.Fatalf("expected ack=false term=true on bad JSON, got ack=%v term=%v", ack, term)
@@ -129,7 +128,7 @@ func TestProcessMessage_BadJSONRelease(t *testing.T) {
 
 func TestProcessMessage_UnknownSubject(t *testing.T) {
 	m := &stubMailer{}
-	ack, term := processMessage(context.Background(), "notifications.something-else", []byte("{}"), m)
+	ack, term := processMessage("notifications.something-else", []byte("{}"), m)
 
 	if !ack || term {
 		t.Fatalf("expected ack=true term=false for unknown subject, got ack=%v term=%v", ack, term)

@@ -7,6 +7,7 @@ import (
 	"GithubReleaseNotificationAPI/internal/db"
 	"GithubReleaseNotificationAPI/internal/fanout"
 	"GithubReleaseNotificationAPI/internal/outbox"
+	"GithubReleaseNotificationAPI/internal/subscription"
 
 	"github.com/jackc/pgx/v5/pgxpool"
 	natsgo "github.com/nats-io/nats.go"
@@ -40,4 +41,24 @@ type fanoutEnqueuerAdapter struct{}
 
 func (f *fanoutEnqueuerAdapter) Enqueue(ctx context.Context, q db.DBTX, r fanout.DetectedRelease) error {
 	return fanout.Enqueue(ctx, q, r)
+}
+
+type recipientListerAdapter struct {
+	svc *subscription.Service
+}
+
+func (a *recipientListerAdapter) ListConfirmed(ctx context.Context, repoID int64) ([]fanout.Recipient, error) {
+	subs, err := a.svc.ListConfirmedByRepositoryID(ctx, repoID)
+	if err != nil {
+		return nil, err
+	}
+	recs := make([]fanout.Recipient, len(subs))
+	for i, s := range subs {
+		recs[i] = fanout.Recipient{
+			Email:            s.Email,
+			UnsubscribeToken: s.UnsubscribeToken,
+		}
+	}
+
+	return recs, nil
 }
