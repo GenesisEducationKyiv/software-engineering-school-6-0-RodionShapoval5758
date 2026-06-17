@@ -58,7 +58,6 @@ services:
       GITHUB_TOKEN: ${GITHUB_TOKEN}
       API_KEY: ${API_KEY}
       NATS_URL: nats://nats:4222
-      INTERNAL_TOKEN: ${INTERNAL_TOKEN:-}
     healthcheck:
       test: ["CMD", "/app/healthcheck"]
       interval: 10s
@@ -86,8 +85,6 @@ services:
       SMTP_PASSWORD: ""
       SENDER_EMAIL: noreply@localhost
       MAIN_URL: http://localhost
-      API_BASE_URL: http://app:8080
-      INTERNAL_TOKEN: ${INTERNAL_TOKEN:-}
 
   postgres_db:
     image: postgres:16.9
