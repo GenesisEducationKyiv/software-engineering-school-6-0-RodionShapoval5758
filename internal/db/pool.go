@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 
+	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
 )
 
@@ -20,4 +21,17 @@ func NewPool(ctx context.Context, databaseURL string) (*pgxpool.Pool, error) {
 	}
 
 	return pool, nil
+}
+
+type poolTxBeginner struct{ *pgxpool.Pool }
+
+func (p *poolTxBeginner) BeginTx(ctx context.Context, opts pgx.TxOptions) (Tx, error) {
+	return p.Pool.BeginTx(ctx, opts)
+}
+
+// WrapPool adapts *pgxpool.Pool to TxBeginner so it can be injected wherever a
+// TxBeginner is required (services, relay) while keeping the pool concrete for
+// callers that need Stats/Close directly.
+func WrapPool(p *pgxpool.Pool) TxBeginner {
+	return &poolTxBeginner{p}
 }

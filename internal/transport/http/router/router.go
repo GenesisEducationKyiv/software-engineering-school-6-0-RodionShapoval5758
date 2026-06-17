@@ -1,8 +1,10 @@
 package router
 
 import (
+	"context"
 	"encoding/json"
 	"net/http"
+	"time"
 
 	"GithubReleaseNotificationAPI/internal/metrics"
 	"GithubReleaseNotificationAPI/internal/transport/http/middleware"
@@ -19,13 +21,51 @@ type subscriptionHandler interface {
 	ValidateAPIKey(http.ResponseWriter, *http.Request)
 }
 
-func health(w http.ResponseWriter, _ *http.Request) {
-	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(http.StatusOK)
-	_ = json.NewEncoder(w).Encode(map[string]string{"status": "ok"})
+type internalHandler interface {
+	ListConfirmedByRepositoryID(http.ResponseWriter, *http.Request)
 }
 
-func New(handler subscriptionHandler, apiKey string, m *metrics.Metrics) http.Handler {
+type Pinger interface {
+	Ping(ctx context.Context) error
+}
+
+func healthHandler(db, nats Pinger) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		ctx, cancel := context.WithTimeout(r.Context(), 2*time.Second)
+		defer cancel()
+
+		checks := map[string]string{
+			"db":   checkDep(ctx, db),
+			"nats": checkDep(ctx, nats),
+		}
+
+		status := http.StatusOK
+		overall := "ok"
+		for _, v := range checks {
+			if v != "ok" {
+				status = http.StatusServiceUnavailable
+				overall = "unhealthy"
+				break
+			}
+		}
+
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(status)
+		_ = json.NewEncoder(w).Encode(map[string]any{
+			"status": overall,
+			"checks": checks,
+		})
+	}
+}
+
+func checkDep(ctx context.Context, p Pinger) string {
+	if err := p.Ping(ctx); err != nil {
+		return err.Error()
+	}
+	return "ok"
+}
+
+func New(handler subscriptionHandler, internal internalHandler, apiKey string, m *metrics.Metrics, db, nats Pinger) http.Handler {
 	r := chi.NewRouter()
 
 	r.Use(middleware.SkipRoutes(middleware.Logger, "/metrics", "/health"))
@@ -33,7 +73,9 @@ func New(handler subscriptionHandler, apiKey string, m *metrics.Metrics) http.Ha
 	r.Use(chimiddleware.Recoverer)
 
 	r.Handle("/metrics", m.Handler())
-	r.Get("/health", health)
+	r.Get("/health", healthHandler(db, nats))
+
+	r.Get("/internal/repositories/{id}/confirmed-subscribers", internal.ListConfirmedByRepositoryID)
 
 	if apiKey != "" {
 		r.Route("/api", func(r chi.Router) {

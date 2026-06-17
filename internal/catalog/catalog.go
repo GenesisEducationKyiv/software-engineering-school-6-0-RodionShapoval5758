@@ -7,8 +7,10 @@ import (
 
 	"GithubReleaseNotificationAPI/internal/catalog/internal/domain"
 	"GithubReleaseNotificationAPI/internal/catalog/internal/store"
+	"GithubReleaseNotificationAPI/internal/db"
 	"GithubReleaseNotificationAPI/internal/shared"
 
+	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
 )
 
@@ -24,10 +26,11 @@ type repoStore interface {
 
 type Service struct {
 	store repoStore
+	pool  *pgxpool.Pool
 }
 
 func New(pool *pgxpool.Pool) *Service {
-	return &Service{store: store.New(pool)}
+	return &Service{store: store.New(pool), pool: pool}
 }
 
 func (s *Service) Ensure(ctx context.Context, fullName string) (int64, error) {
@@ -84,4 +87,26 @@ func (s *Service) ListTracked(ctx context.Context) ([]domain.Repository, error) 
 
 func (s *Service) UpdateLastSeenTag(ctx context.Context, repoID int64, tag string) error {
 	return s.store.UpdateLastSeenTag(ctx, repoID, tag)
+}
+
+// UpdateLastSeenTagAtomic advances last_seen_tag and calls onTx in a single
+// Postgres transaction. onTx receives the active transaction so the caller
+// can enqueue outbox rows atomically with the state change.
+func (s *Service) UpdateLastSeenTagAtomic(ctx context.Context, repoID int64, tag string, onTx func(context.Context, db.DBTX) error) error {
+	tx, err := s.pool.BeginTx(ctx, pgx.TxOptions{})
+	if err != nil {
+		return fmt.Errorf("begin tx: %w", err)
+	}
+	defer func() { _ = tx.Rollback(ctx) }()
+
+	txStore := store.New(tx)
+	if err := txStore.UpdateLastSeenTag(ctx, repoID, tag); err != nil {
+		return err
+	}
+
+	if err := onTx(ctx, tx); err != nil {
+		return err
+	}
+
+	return tx.Commit(ctx)
 }

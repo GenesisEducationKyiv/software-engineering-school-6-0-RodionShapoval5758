@@ -1,0 +1,48 @@
+sequenceDiagram
+    participant C as Client
+    participant H as Handler
+    participant SS as SubscriptionService
+    participant CS as CatalogService
+    participant W as Worker
+    participant GH as GitHub API
+    participant DB as PostgreSQL
+    participant P as Publisher
+    participant N as NATS
+    participant CN as Consumer
+    participant M as Mailer
+
+    Note over C,M: Subscribe
+    C->>H: POST /api/subscribe
+    H->>SS: Subscribe(email, repo)
+    SS->>CS: Ensure(owner/name)
+    CS->>GH: CheckRepo(owner/name)
+    GH-->>CS: 200 / 404 / 429
+    CS->>DB: upsert repository
+    SS->>DB: insert subscription (pending)
+    SS->>P: SendConfirmation(email, token)
+    P->>N: publish notifications.confirmation
+    H-->>C: 200 OK
+    N-->>CN: deliver
+    CN->>M: SendConfirmation(email, token)
+
+    Note over W,M: Release notification — every 25 s
+    W->>CS: ListTracked
+    CS->>DB: query repositories
+    DB-->>CS: []Repository
+    CS-->>W: []Repository
+    loop each repository
+        W->>GH: GetLatestTag(owner/name)
+        GH-->>W: tag / not found
+        alt new tag
+            W->>CS: UpdateLastSeenTag(repoID, tag)
+            W->>SS: ListConfirmedByRepositoryID(repoID)
+            SS->>DB: query confirmed subscriptions
+            DB-->>SS: []Subscription
+            loop each subscriber
+                W->>P: SendReleaseEmails(recipients, release)
+                P->>N: publish notifications.release
+                N-->>CN: deliver
+                CN->>M: SendRelease(email, token, tag)
+            end
+        end
+    end

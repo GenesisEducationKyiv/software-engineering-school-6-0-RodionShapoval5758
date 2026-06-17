@@ -2,36 +2,28 @@ package app
 
 import (
 	"context"
+	"errors"
 
-	"GithubReleaseNotificationAPI/internal/monitoring"
-	"GithubReleaseNotificationAPI/internal/subscription"
+	"GithubReleaseNotificationAPI/internal/db"
+	"GithubReleaseNotificationAPI/internal/outbox"
+
+	natsgo "github.com/nats-io/nats.go"
 )
 
-type confirmedSubProvider interface {
-	ListConfirmedByRepositoryID(ctx context.Context, repositoryID int64) ([]subscription.Subscription, error)
-}
+// natsPinger wraps a NATS connection for the health check Pinger interface.
+type natsPinger struct{ nc *natsgo.Conn }
 
-type ConfirmedSubReader struct {
-	svc confirmedSubProvider
-}
-
-func NewConfirmedSubReader(svc confirmedSubProvider) *ConfirmedSubReader {
-	return &ConfirmedSubReader{svc: svc}
-}
-
-func (r *ConfirmedSubReader) ListConfirmedByRepositoryID(ctx context.Context, id int64) ([]monitoring.ConfirmedSubscriber, error) {
-	subs, err := r.svc.ListConfirmedByRepositoryID(ctx, id)
-	if err != nil {
-		return nil, err
+func (n *natsPinger) Ping(_ context.Context) error {
+	if n.nc.Status() != natsgo.CONNECTED {
+		return errors.New("not connected")
 	}
+	return nil
+}
 
-	cs := make([]monitoring.ConfirmedSubscriber, len(subs))
-	for i, s := range subs {
-		cs[i] = monitoring.ConfirmedSubscriber{
-			Email:            s.Email,
-			UnsubscribeToken: s.UnsubscribeToken,
-		}
-	}
+// outboxStoreAdapter bridges the outbox package free functions to the
+// outboxWriter interface consumed by the subscription service and worker.
+type outboxStoreAdapter struct{}
 
-	return cs, nil
+func (o *outboxStoreAdapter) Insert(ctx context.Context, q db.DBTX, subject string, payload []byte) error {
+	return outbox.Insert(ctx, q, subject, payload)
 }

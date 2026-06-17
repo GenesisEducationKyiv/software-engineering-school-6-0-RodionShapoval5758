@@ -1,0 +1,52 @@
+graph LR
+    PG[(PostgreSQL)]
+    GH[GitHub API]
+    SMTP[SMTP]
+
+    subgraph API["Binary — api"]
+        subgraph SUB["internal/subscription"]
+            SHDL["Handler"]
+            SSVC["Service"]
+            SSTORE["store 🔒"]
+        end
+        subgraph CAT["internal/catalog"]
+            CSVC["Service"]
+            CSTORE["store 🔒"]
+        end
+        subgraph MON["internal/monitoring"]
+            WORK["Worker"]
+            RNOTIF["ReleaseNotifier"]
+        end
+        PUB["internal/notifier — Publisher"]
+    end
+
+    subgraph CONTRACT["contract — shared go module"]
+        EVT["ConfirmationRequested · ReleasePublished\nStream · Subject constants"]
+    end
+
+    subgraph NATS_SVC["NATS JetStream — Stream: NOTIFICATIONS"]
+        NC["notifications.confirmation"]
+        NR["notifications.release"]
+    end
+
+    subgraph NSVC["Binary — notification-service"]
+        CONS["consumer — durable pull\nAck · Term · Nak"]
+        SMAIL["mailer — SMTPMailer"]
+    end
+
+    SHDL --> SSVC
+    SSVC --> SSTORE & CSVC & PUB
+    CSVC --> CSTORE
+    WORK --> CSVC & RNOTIF
+    RNOTIF --> SSVC & PUB
+
+    PUB --> NC & NR
+    NC & NR --> CONS --> SMAIL
+
+    SSTORE & CSTORE --> PG
+    SSVC <--> GH
+    WORK <--> GH
+    SMAIL --> SMTP
+
+    API  -.->|imports| CONTRACT
+    NSVC -.->|imports| CONTRACT

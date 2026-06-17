@@ -5,25 +5,25 @@ import (
 	"errors"
 	"fmt"
 
+	"GithubReleaseNotificationAPI/internal/db"
 	"GithubReleaseNotificationAPI/internal/shared"
 	"GithubReleaseNotificationAPI/internal/subscription/internal/domain"
 
 	"github.com/jackc/pgerrcode"
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgconn"
-	"github.com/jackc/pgx/v5/pgxpool"
 )
 
 type PostgresSubscriptionRepository struct {
-	pool *pgxpool.Pool
+	db db.DBTX
 }
 
-func New(pool *pgxpool.Pool) *PostgresSubscriptionRepository {
-	return &PostgresSubscriptionRepository{pool: pool}
+func New(d db.DBTX) *PostgresSubscriptionRepository {
+	return &PostgresSubscriptionRepository{db: d}
 }
 
 func (r *PostgresSubscriptionRepository) Create(ctx context.Context, subscription domain.Subscription) error {
-	tag, err := r.pool.Exec(
+	tag, err := r.db.Exec(
 		ctx,
 		createSubscriptionQuery,
 		subscription.Email,
@@ -55,9 +55,13 @@ func (r *PostgresSubscriptionRepository) Create(ctx context.Context, subscriptio
 	return nil
 }
 
+func (r *PostgresSubscriptionRepository) CreateInTx(ctx context.Context, q db.DBTX, sub domain.Subscription) error {
+	return New(q).Create(ctx, sub)
+}
+
 func (r *PostgresSubscriptionRepository) FindByUnsubscribeToken(ctx context.Context, token string) (*domain.Subscription, error) {
 	subscription, err := scanSubscription(
-		r.pool.QueryRow(ctx, findSubscriptionByUnsubscribeTokenQuery, token),
+		r.db.QueryRow(ctx, findSubscriptionByUnsubscribeTokenQuery, token),
 	)
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
@@ -71,7 +75,7 @@ func (r *PostgresSubscriptionRepository) FindByUnsubscribeToken(ctx context.Cont
 }
 
 func (r *PostgresSubscriptionRepository) Confirm(ctx context.Context, token string) error {
-	tag, err := r.pool.Exec(ctx, confirmSubscriptionByTokenQuery, token)
+	tag, err := r.db.Exec(ctx, confirmSubscriptionByTokenQuery, token)
 	if err != nil {
 		return fmt.Errorf("confirm subscription by token: %w", err)
 	}
@@ -84,7 +88,7 @@ func (r *PostgresSubscriptionRepository) Confirm(ctx context.Context, token stri
 }
 
 func (r *PostgresSubscriptionRepository) DeleteByUnsubscribeToken(ctx context.Context, token string) error {
-	tag, err := r.pool.Exec(ctx, deleteSubscriptionByUnsubscribeTokenQuery, token)
+	tag, err := r.db.Exec(ctx, deleteSubscriptionByUnsubscribeTokenQuery, token)
 	if err != nil {
 		return fmt.Errorf("delete subscription by unsubscribe token: %w", err)
 	}
@@ -99,7 +103,7 @@ func (r *PostgresSubscriptionRepository) DeleteByUnsubscribeToken(ctx context.Co
 func (r *PostgresSubscriptionRepository) HasAnyByRepositoryID(ctx context.Context, repositoryID int64) (bool, error) {
 	var hasAny bool
 
-	err := r.pool.QueryRow(ctx, hasAnySubscriptionsByRepositoryIDQuery, repositoryID).Scan(&hasAny)
+	err := r.db.QueryRow(ctx, hasAnySubscriptionsByRepositoryIDQuery, repositoryID).Scan(&hasAny)
 	if err != nil {
 		return false, fmt.Errorf("check subscriptions for repository_id %d: %w", repositoryID, err)
 	}
@@ -108,13 +112,14 @@ func (r *PostgresSubscriptionRepository) HasAnyByRepositoryID(ctx context.Contex
 }
 
 func (r *PostgresSubscriptionRepository) ListConfirmedByRepositoryID(ctx context.Context, repositoryID int64) ([]domain.Subscription, error) {
-	rows, err := r.pool.Query(ctx, listConfirmedSubscriptionsByRepositoryIDQuery, repositoryID)
+	rows, err := r.db.Query(ctx, listConfirmedSubscriptionsByRepositoryIDQuery, repositoryID)
 	if err != nil {
 		return nil, fmt.Errorf("query confirmed subscriptions by repository_id %d: %w", repositoryID, err)
 	}
 	defer rows.Close()
 
 	var subs []domain.Subscription
+
 	for rows.Next() {
 		subscription, err := scanSubscription(rows)
 		if err != nil {
@@ -132,13 +137,14 @@ func (r *PostgresSubscriptionRepository) ListConfirmedByRepositoryID(ctx context
 }
 
 func (r *PostgresSubscriptionRepository) ListSubscriptionDetailsByEmail(ctx context.Context, email string) ([]domain.SubscriptionDetails, error) {
-	rows, err := r.pool.Query(ctx, listSubscriptionDetailsByEmailQuery, email)
+	rows, err := r.db.Query(ctx, listSubscriptionDetailsByEmailQuery, email)
 	if err != nil {
 		return nil, fmt.Errorf("query subscription details by email: %w", err)
 	}
 	defer rows.Close()
 
 	var details []domain.SubscriptionDetails
+
 	for rows.Next() {
 		var detail domain.SubscriptionDetails
 		err := rows.Scan(
@@ -150,6 +156,7 @@ func (r *PostgresSubscriptionRepository) ListSubscriptionDetailsByEmail(ctx cont
 		if err != nil {
 			return nil, fmt.Errorf("scan subscription row: %w", err)
 		}
+
 		details = append(details, detail)
 	}
 

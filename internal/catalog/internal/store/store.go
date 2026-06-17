@@ -6,26 +6,26 @@ import (
 	"fmt"
 
 	"GithubReleaseNotificationAPI/internal/catalog/internal/domain"
+	"GithubReleaseNotificationAPI/internal/db"
 	"GithubReleaseNotificationAPI/internal/shared"
 
 	"github.com/jackc/pgerrcode"
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgconn"
-	"github.com/jackc/pgx/v5/pgxpool"
 )
 
 type PostgresRepoRepository struct {
-	pool *pgxpool.Pool
+	db db.DBTX
 }
 
-func New(pool *pgxpool.Pool) *PostgresRepoRepository {
-	return &PostgresRepoRepository{pool: pool}
+func New(d db.DBTX) *PostgresRepoRepository {
+	return &PostgresRepoRepository{db: d}
 }
 
 func (r *PostgresRepoRepository) Create(ctx context.Context, repositoryName string) (*domain.Repository, error) {
 	var repo domain.Repository
 
-	err := r.pool.QueryRow(ctx, createRepoQuery, repositoryName).Scan(
+	err := r.db.QueryRow(ctx, createRepoQuery, repositoryName).Scan(
 		&repo.ID,
 		&repo.FullName,
 		&repo.LastSeenTag,
@@ -46,7 +46,7 @@ func (r *PostgresRepoRepository) Create(ctx context.Context, repositoryName stri
 func (r *PostgresRepoRepository) FindByFullName(ctx context.Context, fullName string) (*domain.Repository, error) {
 	var repo domain.Repository
 
-	err := r.pool.QueryRow(ctx, findByNameQuery, fullName).Scan(
+	err := r.db.QueryRow(ctx, findByNameQuery, fullName).Scan(
 		&repo.ID,
 		&repo.FullName,
 		&repo.LastSeenTag,
@@ -65,7 +65,7 @@ func (r *PostgresRepoRepository) FindByFullName(ctx context.Context, fullName st
 }
 
 func (r *PostgresRepoRepository) UpdateLastSeenTag(ctx context.Context, repositoryID int64, lastTag string) error {
-	tag, err := r.pool.Exec(ctx, updateLastSeenTagByIDQuery, repositoryID, lastTag)
+	tag, err := r.db.Exec(ctx, updateLastSeenTagByIDQuery, repositoryID, lastTag)
 	if err != nil {
 		return fmt.Errorf("update last_seen_tag %s in repo with id %d: %w", lastTag, repositoryID, err)
 	}
@@ -78,7 +78,7 @@ func (r *PostgresRepoRepository) UpdateLastSeenTag(ctx context.Context, reposito
 }
 
 func (r *PostgresRepoRepository) DeleteByID(ctx context.Context, repositoryID int64) error {
-	tag, err := r.pool.Exec(ctx, deleteByIDQuery, repositoryID)
+	tag, err := r.db.Exec(ctx, deleteByIDQuery, repositoryID)
 	if err != nil {
 		return fmt.Errorf("delete repository with id %d: %w", repositoryID, err)
 	}
@@ -91,13 +91,14 @@ func (r *PostgresRepoRepository) DeleteByID(ctx context.Context, repositoryID in
 }
 
 func (r *PostgresRepoRepository) ListTracked(ctx context.Context) ([]domain.Repository, error) {
-	rows, err := r.pool.Query(ctx, listTrackedReposQuery)
+	rows, err := r.db.Query(ctx, listTrackedReposQuery)
 	if err != nil {
 		return nil, fmt.Errorf("query tracked repositories: %w", err)
 	}
 	defer rows.Close()
 
 	var repos []domain.Repository
+
 	for rows.Next() {
 		var repo domain.Repository
 		if err := rows.Scan(
@@ -109,6 +110,7 @@ func (r *PostgresRepoRepository) ListTracked(ctx context.Context) ([]domain.Repo
 		); err != nil {
 			return nil, fmt.Errorf("scan repository row: %w", err)
 		}
+
 		repos = append(repos, repo)
 	}
 

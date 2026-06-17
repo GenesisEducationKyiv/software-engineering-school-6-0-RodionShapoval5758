@@ -2,9 +2,13 @@ package subscription_test
 
 import (
 	"context"
+	"net/http"
 
+	"GithubReleaseNotificationAPI/internal/db"
 	"GithubReleaseNotificationAPI/internal/subscription"
 
+	"github.com/jackc/pgx/v5"
+	"github.com/jackc/pgx/v5/pgconn"
 	"github.com/stretchr/testify/mock"
 )
 
@@ -14,6 +18,11 @@ type mockSubscriptionRepository struct {
 
 func (m *mockSubscriptionRepository) Create(ctx context.Context, s subscription.Subscription) error {
 	args := m.Called(ctx, s)
+	return args.Error(0)
+}
+
+func (m *mockSubscriptionRepository) CreateInTx(ctx context.Context, q db.DBTX, sub subscription.Subscription) error {
+	args := m.Called(ctx, sub)
 	return args.Error(0)
 }
 
@@ -79,13 +88,29 @@ func (m *mockGithubClient) CheckRepo(ctx context.Context, fullName string) error
 	return args.Error(0)
 }
 
-type mockNotifier struct {
+type mockOutboxWriter struct {
 	mock.Mock
 }
 
-func (m *mockNotifier) SendConfirmation(toEmail, repoName, confirmToken string) error {
-	args := m.Called(toEmail, repoName, confirmToken)
+func (m *mockOutboxWriter) Insert(ctx context.Context, q db.DBTX, subject string, payload []byte) error {
+	args := m.Called(ctx, subject, payload)
 	return args.Error(0)
+}
+
+type fakeTx struct{}
+
+func (*fakeTx) Exec(_ context.Context, _ string, _ ...any) (pgconn.CommandTag, error) {
+	return pgconn.CommandTag{}, nil
+}
+func (*fakeTx) Query(_ context.Context, _ string, _ ...any) (pgx.Rows, error) { return nil, nil }
+func (*fakeTx) QueryRow(_ context.Context, _ string, _ ...any) pgx.Row        { return nil }
+func (*fakeTx) Commit(_ context.Context) error                                { return nil }
+func (*fakeTx) Rollback(_ context.Context) error                              { return nil }
+
+type fakeTxBeginner struct{}
+
+func (*fakeTxBeginner) BeginTx(_ context.Context, _ pgx.TxOptions) (db.Tx, error) {
+	return &fakeTx{}, nil
 }
 
 type mockServiceForHandler struct {
@@ -114,3 +139,11 @@ func (m *mockServiceForHandler) ListByEmail(ctx context.Context, email string) (
 	}
 	return args.Get(0).([]subscription.SubscriptionDetails), args.Error(1)
 }
+
+type stubInternalHandler struct{}
+
+func (*stubInternalHandler) ListConfirmedByRepositoryID(http.ResponseWriter, *http.Request) {}
+
+type stubPinger struct{}
+
+func (*stubPinger) Ping(_ context.Context) error { return nil }

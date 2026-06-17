@@ -15,11 +15,12 @@ var (
 )
 
 type Config struct {
-	DatabaseURL string
-	Port        string
-	GithubToken string
-	NATSUrl     string
-	ApiKey      string
+	DatabaseURL   string
+	Port          string
+	GithubToken   string
+	NATSUrl       string
+	ApiKey        string
+	InternalToken string
 }
 
 func Load() (*Config, error) {
@@ -36,11 +37,12 @@ func Load() (*Config, error) {
 
 func loadFromEnv() *Config {
 	return &Config{
-		DatabaseURL: os.Getenv("DATABASE_URL"),
-		Port:        os.Getenv("PORT"),
-		GithubToken: os.Getenv("GITHUB_TOKEN"),
-		NATSUrl:     os.Getenv("NATS_URL"),
-		ApiKey:      os.Getenv("API_KEY"),
+		DatabaseURL:   os.Getenv("DATABASE_URL"),
+		Port:          os.Getenv("PORT"),
+		GithubToken:   os.Getenv("GITHUB_TOKEN"),
+		NATSUrl:       os.Getenv("NATS_URL"),
+		ApiKey:        os.Getenv("API_KEY"),
+		InternalToken: os.Getenv("INTERNAL_TOKEN"),
 	}
 }
 

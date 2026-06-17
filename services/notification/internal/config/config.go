@@ -19,13 +19,15 @@ var (
 )
 
 type Config struct {
-	NATSUrl    string
-	SMTPHost   string
-	SMTPPort   string
-	SMTPUser   string
-	SMTPPass   string
-	FromEmail  string
-	AppBaseURL string
+	NATSUrl       string
+	SMTPHost      string
+	SMTPPort      string
+	SMTPUser      string
+	SMTPPass      string
+	FromEmail     string
+	AppBaseURL    string
+	APIBaseURL    string
+	InternalToken string
 }
 
 func Load() (*Config, error) {
@@ -42,19 +44,24 @@ func Load() (*Config, error) {
 
 func loadFromEnv() *Config {
 	return &Config{
-		NATSUrl:    os.Getenv("NATS_URL"),
-		SMTPHost:   os.Getenv("SMTP_HOST"),
-		SMTPPort:   os.Getenv("SMTP_PORT"),
-		SMTPUser:   os.Getenv("SMTP_USER"),
-		SMTPPass:   os.Getenv("SMTP_PASSWORD"),
-		FromEmail:  os.Getenv("SENDER_EMAIL"),
-		AppBaseURL: os.Getenv("MAIN_URL"),
+		NATSUrl:       os.Getenv("NATS_URL"),
+		SMTPHost:      os.Getenv("SMTP_HOST"),
+		SMTPPort:      os.Getenv("SMTP_PORT"),
+		SMTPUser:      os.Getenv("SMTP_USER"),
+		SMTPPass:      os.Getenv("SMTP_PASSWORD"),
+		FromEmail:     os.Getenv("SENDER_EMAIL"),
+		AppBaseURL:    os.Getenv("MAIN_URL"),
+		APIBaseURL:    os.Getenv("API_BASE_URL"),
+		InternalToken: os.Getenv("INTERNAL_TOKEN"),
 	}
 }
 
 func (cfg *Config) applyDefaults() {
 	if cfg.NATSUrl == "" {
 		cfg.NATSUrl = "nats://localhost:4222"
+	}
+	if cfg.APIBaseURL == "" {
+		cfg.APIBaseURL = "http://localhost:8080"
 	}
 	if cfg.SMTPPort == "" {
 		cfg.SMTPPort = "1025"

@@ -15,6 +15,7 @@ import (
 	"GithubReleaseNotificationAPI/internal/metrics"
 	"GithubReleaseNotificationAPI/internal/monitoring"
 	"GithubReleaseNotificationAPI/internal/notifier"
+	"GithubReleaseNotificationAPI/internal/outbox"
 	"GithubReleaseNotificationAPI/internal/subscription"
 	"GithubReleaseNotificationAPI/internal/transport/http/handler"
 	httpRouter "GithubReleaseNotificationAPI/internal/transport/http/router"
@@ -28,6 +29,7 @@ import (
 type App struct {
 	server     *http.Server
 	worker     *monitoring.Worker
+	relay      *outbox.Relay
 	appMetrics *metrics.Metrics
 	dbPool     *pgxpool.Pool
 	nc         *natsgo.Conn
@@ -65,23 +67,27 @@ func Build(cfg *config.Config) (*App, error) {
 		return nil, fmt.Errorf("ensure notification stream: %w", err)
 	}
 
-	publisher := notifier.NewPublisher(js)
+	outboxRelay := outbox.NewRelay(dbPool, js)
+	outboxStore := &outboxStoreAdapter{}
 
 	catalogService := catalog.New(dbPool)
 	subRepo := subscription.NewRepository(dbPool)
 	githubClient := github.NewGithubClient(http.DefaultClient, &cfg.GithubToken)
-	subService := subscription.NewService(subRepo, catalogService, githubClient, publisher)
+	subService := subscription.NewService(subRepo, catalogService, githubClient, outboxStore, db.WrapPool(dbPool))
 
 	reg := prometheus.NewRegistry()
 	appMetrics := metrics.New(reg)
-	router := httpRouter.New(handler.New(subService), cfg.ApiKey, appMetrics)
 
-	releaseNotifier := monitoring.NewReleaseNotifier(publisher, NewConfirmedSubReader(subService))
-	worker := monitoring.NewWorker(githubClient, catalogService, releaseNotifier, appMetrics)
+	subHandler := handler.New(subService)
+	internalHandler := handler.NewInternal(subService, cfg.InternalToken)
+	router := httpRouter.New(subHandler, internalHandler, cfg.ApiKey, appMetrics, dbPool, &natsPinger{nc})
+
+	worker := monitoring.NewWorker(githubClient, catalogService, outboxStore, appMetrics)
 
 	return &App{
 		server:     &http.Server{Addr: ":" + cfg.Port, Handler: router},
 		worker:     worker,
+		relay:      outboxRelay,
 		appMetrics: appMetrics,
 		dbPool:     dbPool,
 		nc:         nc,
@@ -102,6 +108,7 @@ func (a *App) Serve(ctx context.Context) error {
 	}()
 
 	go a.appMetrics.CollectDBStats(ctx, a.dbPool, 15*time.Second)
+	go a.relay.Run(ctx)
 	go func() {
 		if err := a.worker.Start(ctx, 25*time.Second); err != nil {
 			slog.Error("worker failed", "error", err)

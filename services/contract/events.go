@@ -13,7 +13,7 @@ type ConfirmationRequested struct {
 	ConfirmToken string `json:"confirm_token"`
 }
 
-type ReleasePublished struct {
+type ReleaseDetected struct {
 	Email            string `json:"email"`
 	UnsubscribeToken string `json:"unsubscribe_token"`
 	ReleaseTag       string `json:"release_tag"`

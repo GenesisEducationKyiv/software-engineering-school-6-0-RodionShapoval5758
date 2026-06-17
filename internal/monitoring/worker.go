@@ -2,27 +2,27 @@ package monitoring
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
+	"fmt"
 	"log/slog"
 	"sync"
 	"sync/atomic"
 	"time"
 
+	"GithubReleaseNotificationAPI/contract"
 	"GithubReleaseNotificationAPI/internal/catalog"
+	"GithubReleaseNotificationAPI/internal/db"
 	"GithubReleaseNotificationAPI/internal/github"
 	"GithubReleaseNotificationAPI/internal/idgen"
 	"GithubReleaseNotificationAPI/internal/shared"
 )
 
-type releaseNotifier interface {
-	NotifyConfirmedSubscribers(ctx context.Context, repo catalog.Repository, release *github.Release) error
-}
-
 type Worker struct {
-	githubClient    githubClient
-	catalogClient   catalogClient
-	releaseNotifier releaseNotifier
-	metrics         scanObserver
+	githubClient  githubClient
+	catalogClient catalogClient
+	outbox        outboxWriter
+	metrics       scanObserver
 }
 
 const maxConcurrentRepositoryScans = 10
@@ -30,14 +30,14 @@ const maxConcurrentRepositoryScans = 10
 func NewWorker(
 	githubClient githubClient,
 	catalogClient catalogClient,
-	releaseNotifier releaseNotifier,
+	outbox outboxWriter,
 	metrics scanObserver,
 ) *Worker {
 	return &Worker{
-		githubClient:    githubClient,
-		catalogClient:   catalogClient,
-		releaseNotifier: releaseNotifier,
-		metrics:         metrics,
+		githubClient:  githubClient,
+		catalogClient: catalogClient,
+		outbox:        outbox,
+		metrics:       metrics,
 	}
 }
 
@@ -66,7 +66,6 @@ func (w *Worker) Start(ctx context.Context, loopDuration time.Duration) error {
 func (w *Worker) handleScanError(err error) {
 	if errors.Is(err, github.ErrRateLimited) {
 		slog.Warn("GitHub API rate limit exceeded. Pausing scanner until next interval.")
-
 		return
 	}
 
@@ -154,7 +153,6 @@ func (w *Worker) handleRepositoryProcessingError(
 	if errors.Is(err, github.ErrRateLimited) {
 		rateLimited.Store(true)
 		cancelScan()
-
 		return
 	}
 
@@ -187,7 +185,6 @@ func (w *Worker) processRepository(ctx context.Context, repo catalog.Repository,
 			"repository", repo.FullName,
 			"tag", release.Tag,
 		)
-
 		return nil
 	}
 
@@ -198,11 +195,22 @@ func (w *Worker) processRepository(ctx context.Context, repo catalog.Repository,
 		"tag", release.Tag,
 	)
 
-	if err := w.catalogClient.UpdateLastSeenTag(ctx, repo.ID, release.Tag); err != nil {
-		return err
+	payload, err := json.Marshal(contract.ReleaseDetected{
+		RepoID:      repo.ID,
+		RepoName:    repo.FullName,
+		ReleaseTag:  release.Tag,
+		ReleaseName: release.Name,
+		ReleaseURL:  release.URL,
+	})
+	if err != nil {
+		return fmt.Errorf("marshal release event: %w", err)
 	}
 
-	return w.releaseNotifier.NotifyConfirmedSubscribers(ctx, repo, release)
+	// Advance the tag and enqueue the release event atomically.
+	// If either write fails the tx rolls back: no tag advance, no event → next scan retries.
+	return w.catalogClient.UpdateLastSeenTagAtomic(ctx, repo.ID, release.Tag, func(ctx context.Context, q db.DBTX) error {
+		return w.outbox.Insert(ctx, q, contract.SubjectRelease, payload)
+	})
 }
 
 func (w *Worker) getLatestRelease(ctx context.Context, repo catalog.Repository, logger *slog.Logger) (*github.Release, error) {

@@ -3,6 +3,7 @@ package subscription
 import (
 	"context"
 
+	"GithubReleaseNotificationAPI/internal/db"
 	"GithubReleaseNotificationAPI/internal/subscription/internal/domain"
 )
 
@@ -17,6 +18,7 @@ type githubClient interface {
 
 type subscriptionRepository interface {
 	Create(ctx context.Context, subscription domain.Subscription) error
+	CreateInTx(ctx context.Context, q db.DBTX, sub domain.Subscription) error
 	FindByUnsubscribeToken(ctx context.Context, token string) (*domain.Subscription, error)
 	Confirm(ctx context.Context, token string) error
 	DeleteByUnsubscribeToken(ctx context.Context, token string) error
@@ -25,6 +27,6 @@ type subscriptionRepository interface {
 	ListConfirmedByRepositoryID(ctx context.Context, repositoryID int64) ([]domain.Subscription, error)
 }
 
-type notifier interface {
-	SendConfirmation(toEmail, repoName, confirmToken string) error
+type outboxWriter interface {
+	Insert(ctx context.Context, q db.DBTX, subject string, payload []byte) error
 }

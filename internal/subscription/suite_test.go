@@ -23,7 +23,7 @@ type ServiceTestSuite struct {
 	subRepo *mockSubscriptionRepository
 	catalog *mockCatalogClient
 	github  *mockGithubClient
-	smtp    *mockNotifier
+	outbox  *mockOutboxWriter
 
 	svc *subscription.Service
 }
@@ -32,16 +32,16 @@ func (s *ServiceTestSuite) SetupTest() {
 	s.subRepo = new(mockSubscriptionRepository)
 	s.catalog = new(mockCatalogClient)
 	s.github = new(mockGithubClient)
-	s.smtp = new(mockNotifier)
+	s.outbox = new(mockOutboxWriter)
 
-	s.svc = subscription.NewService(s.subRepo, s.catalog, s.github, s.smtp)
+	s.svc = subscription.NewService(s.subRepo, s.catalog, s.github, s.outbox, &fakeTxBeginner{})
 }
 
 func (s *ServiceTestSuite) assertExpectations() {
 	s.subRepo.AssertExpectations(s.T())
 	s.catalog.AssertExpectations(s.T())
 	s.github.AssertExpectations(s.T())
-	s.smtp.AssertExpectations(s.T())
+	s.outbox.AssertExpectations(s.T())
 }
 
 func TestServiceTestSuite(t *testing.T) {
@@ -57,7 +57,14 @@ type HandlerTestSuite struct {
 
 func (s *HandlerTestSuite) SetupTest() {
 	s.svc = new(mockServiceForHandler)
-	s.router = router.New(handler.New(s.svc), "", metrics.New(prometheus.NewRegistry()))
+	s.router = router.New(
+		handler.New(s.svc),
+		&stubInternalHandler{},
+		"",
+		metrics.New(prometheus.NewRegistry()),
+		&stubPinger{},
+		&stubPinger{},
+	)
 }
 
 func (s *HandlerTestSuite) assertExpectations() {

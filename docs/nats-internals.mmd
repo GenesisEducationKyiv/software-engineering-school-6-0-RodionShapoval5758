@@ -1,0 +1,37 @@
+flowchart LR
+    subgraph api ["API Service"]
+        SS["SubscriptionService\nSubscribe()"]
+        W["monitoring.Worker\nStart() every 25s"]
+        RN["ReleaseNotifier\nNotifySubscribers()"]
+        PUB["notifier.Publisher\nwraps jetstream.JetStream"]
+    end
+
+    subgraph stream ["NATS JetStream — Stream: NOTIFICATIONS\nStorage: File · Subjects: notifications.>"]
+        SC["notifications.confirmation\nConfirmationRequested\n{ email, repo_name, confirm_token }"]
+        SR["notifications.release\nReleasePublished\n{ email, unsubscribe_token, release_tag, release_name, release_url }"]
+        CONS["Durable Consumer: notification-consumer\nFilterSubject: notifications.>\nDeliverPolicy: All · AckPolicy: Explicit"]
+    end
+
+    subgraph notif ["Notification Service"]
+        CON["consumer.Consumer\nStart()"]
+        MAIL["mailer.Mailer"]
+    end
+
+    SS -->|"SendConfirmation()"| PUB
+    W --> RN
+    RN -->|"SendReleaseEmails()"| PUB
+
+    PUB -->|"js.Publish, ctx 5s"| SC
+    PUB -->|"js.Publish, ctx 5s"| SR
+
+    SC --> CONS
+    SR --> CONS
+
+    CONS -->|push msg| CON
+
+    CON -->|"Ack — success"| CONS
+    CON -->|"Nak — send failed, redeliver"| CONS
+    CON -->|"Term — bad JSON, drop"| CONS
+
+    CON -->|"SendConfirmation()"| MAIL
+    CON -->|"SendRelease()"| MAIL
