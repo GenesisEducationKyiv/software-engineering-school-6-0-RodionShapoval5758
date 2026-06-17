@@ -8,8 +8,15 @@ import (
 	"GithubReleaseNotificationAPI/internal/fanout"
 	"GithubReleaseNotificationAPI/internal/outbox"
 
+	"github.com/jackc/pgx/v5/pgxpool"
 	natsgo "github.com/nats-io/nats.go"
 )
+
+type dbPinger struct{ pool *pgxpool.Pool }
+
+func (d *dbPinger) Ping(ctx context.Context) error {
+	return d.pool.Ping(ctx)
+}
 
 // natsPinger wraps a NATS connection for the health check Pinger interface.
 type natsPinger struct{ nc *natsgo.Conn }

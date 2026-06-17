@@ -79,8 +79,7 @@ func Build(cfg *config.Config) (*App, error) {
 	appMetrics := metrics.New(reg)
 
 	subHandler := handler.New(subService)
-	internalHandler := handler.NewInternal(subService, cfg.InternalToken)
-	router := httpRouter.New(subHandler, internalHandler, cfg.ApiKey, appMetrics, dbPool, &natsPinger{nc})
+	router := httpRouter.New(subHandler, cfg.ApiKey, appMetrics, &dbPinger{dbPool}, &natsPinger{nc})
 
 	fanoutEnqueuer := &fanoutEnqueuerAdapter{}
 	worker := monitoring.NewWorker(githubClient, catalogService, fanoutEnqueuer, appMetrics)

@@ -7,7 +7,6 @@ import (
 	"testing"
 
 	"GithubReleaseNotificationAPI/contract"
-	"GithubReleaseNotificationAPI/services/notification/internal/subscriber"
 )
 
 type stubMailer struct {
@@ -30,17 +29,6 @@ func (s *stubMailer) SendRelease(toEmail, unsubscribeToken, releaseTag, releaseN
 	return s.err
 }
 
-type stubSubscriberClient struct {
-	subs []subscriber.Subscriber
-	err  error
-}
-
-func (s *stubSubscriberClient) ListConfirmed(_ context.Context, _ int64) ([]subscriber.Subscriber, error) {
-	return s.subs, s.err
-}
-
-var noSubs = &stubSubscriberClient{}
-
 func TestProcessMessage_Confirmation(t *testing.T) {
 	ev := contract.ConfirmationRequested{
 		Email:        "user@example.com",
@@ -50,7 +38,7 @@ func TestProcessMessage_Confirmation(t *testing.T) {
 	data, _ := json.Marshal(ev)
 
 	m := &stubMailer{}
-	ack, term := processMessage(context.Background(), contract.SubjectConfirmation, data, m, noSubs)
+	ack, term := processMessage(context.Background(), contract.SubjectConfirmation, data, m)
 
 	if !ack || term {
 		t.Fatalf("expected ack=true term=false, got ack=%v term=%v", ack, term)
@@ -65,19 +53,16 @@ func TestProcessMessage_Confirmation(t *testing.T) {
 
 func TestProcessMessage_Release(t *testing.T) {
 	ev := contract.ReleaseDetected{
-		RepoID:      42,
-		RepoName:    "owner/repo",
-		ReleaseTag:  "v1.2.3",
-		ReleaseName: "My Release",
-		ReleaseURL:  "https://github.com/owner/repo/releases/tag/v1.2.3",
+		Email:            "user@example.com",
+		UnsubscribeToken: "unsub456",
+		ReleaseTag:       "v1.2.3",
+		ReleaseName:      "My Release",
+		ReleaseURL:       "https://github.com/owner/repo/releases/tag/v1.2.3",
 	}
 	data, _ := json.Marshal(ev)
 
-	sub := subscriber.Subscriber{Email: "user@example.com", UnsubscribeToken: "unsub456"}
-	subs := &stubSubscriberClient{subs: []subscriber.Subscriber{sub}}
 	m := &stubMailer{}
-
-	ack, term := processMessage(context.Background(), contract.SubjectRelease, data, m, subs)
+	ack, term := processMessage(context.Background(), contract.SubjectRelease, data, m)
 
 	if !ack || term {
 		t.Fatalf("expected ack=true term=false, got ack=%v term=%v", ack, term)
@@ -96,32 +81,34 @@ func TestProcessMessage_SendConfirmationFailure(t *testing.T) {
 	data, _ := json.Marshal(ev)
 
 	m := &stubMailer{err: errors.New("smtp down")}
-	ack, term := processMessage(context.Background(), contract.SubjectConfirmation, data, m, noSubs)
+	ack, term := processMessage(context.Background(), contract.SubjectConfirmation, data, m)
 
 	if ack || term {
 		t.Fatalf("expected ack=false term=false on send failure, got ack=%v term=%v", ack, term)
 	}
 }
 
-func TestProcessMessage_SubscriberClientFailure(t *testing.T) {
-	ev := contract.ReleaseDetected{RepoID: 1, RepoName: "o/r", ReleaseTag: "v1", ReleaseName: "R", ReleaseURL: "http://x"}
+func TestProcessMessage_SendReleaseFailure(t *testing.T) {
+	ev := contract.ReleaseDetected{
+		Email:            "user@example.com",
+		UnsubscribeToken: "tok",
+		ReleaseTag:       "v1",
+		ReleaseName:      "R",
+		ReleaseURL:       "http://x",
+	}
 	data, _ := json.Marshal(ev)
 
-	subs := &stubSubscriberClient{err: errors.New("api down")}
-	m := &stubMailer{}
-	ack, term := processMessage(context.Background(), contract.SubjectRelease, data, m, subs)
+	m := &stubMailer{err: errors.New("smtp down")}
+	ack, term := processMessage(context.Background(), contract.SubjectRelease, data, m)
 
 	if ack || term {
-		t.Fatalf("expected ack=false term=false on subscriber failure, got ack=%v term=%v", ack, term)
-	}
-	if m.releaseCalled {
-		t.Fatal("SendRelease should not be called when subscriber lookup fails")
+		t.Fatalf("expected ack=false term=false on send failure, got ack=%v term=%v", ack, term)
 	}
 }
 
 func TestProcessMessage_BadJSONConfirmation(t *testing.T) {
 	m := &stubMailer{}
-	ack, term := processMessage(context.Background(), contract.SubjectConfirmation, []byte("not-json"), m, noSubs)
+	ack, term := processMessage(context.Background(), contract.SubjectConfirmation, []byte("not-json"), m)
 
 	if ack || !term {
 		t.Fatalf("expected ack=false term=true on bad JSON, got ack=%v term=%v", ack, term)
@@ -133,7 +120,7 @@ func TestProcessMessage_BadJSONConfirmation(t *testing.T) {
 
 func TestProcessMessage_BadJSONRelease(t *testing.T) {
 	m := &stubMailer{}
-	ack, term := processMessage(context.Background(), contract.SubjectRelease, []byte("{bad"), m, noSubs)
+	ack, term := processMessage(context.Background(), contract.SubjectRelease, []byte("{bad"), m)
 
 	if ack || !term {
 		t.Fatalf("expected ack=false term=true on bad JSON, got ack=%v term=%v", ack, term)
@@ -142,7 +129,7 @@ func TestProcessMessage_BadJSONRelease(t *testing.T) {
 
 func TestProcessMessage_UnknownSubject(t *testing.T) {
 	m := &stubMailer{}
-	ack, term := processMessage(context.Background(), "notifications.something-else", []byte("{}"), m, noSubs)
+	ack, term := processMessage(context.Background(), "notifications.something-else", []byte("{}"), m)
 
 	if !ack || term {
 		t.Fatalf("expected ack=true term=false for unknown subject, got ack=%v term=%v", ack, term)

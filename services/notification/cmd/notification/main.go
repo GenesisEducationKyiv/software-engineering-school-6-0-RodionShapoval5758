@@ -11,7 +11,6 @@ import (
 	"GithubReleaseNotificationAPI/services/notification/internal/config"
 	"GithubReleaseNotificationAPI/services/notification/internal/consumer"
 	"GithubReleaseNotificationAPI/services/notification/internal/mailer"
-	"GithubReleaseNotificationAPI/services/notification/internal/subscriber"
 
 	"github.com/nats-io/nats.go"
 	"github.com/nats-io/nats.go/jetstream"
@@ -57,8 +56,7 @@ func run() error {
 	}
 
 	m := mailer.NewMailer(cfg.SMTPHost, cfg.SMTPPort, cfg.SMTPUser, cfg.SMTPPass, cfg.FromEmail, cfg.AppBaseURL)
-	subClient := subscriber.New(cfg.APIBaseURL, cfg.InternalToken)
-	c := consumer.New(js, m, subClient)
+	c := consumer.New(js, m)
 
 	slog.Info("notification service started")
 
