@@ -21,10 +21,6 @@ type subscriptionHandler interface {
 	ValidateAPIKey(http.ResponseWriter, *http.Request)
 }
 
-type internalHandler interface {
-	ListConfirmedByRepositoryID(http.ResponseWriter, *http.Request)
-}
-
 type Pinger interface {
 	Ping(ctx context.Context) error
 }
@@ -65,7 +61,7 @@ func checkDep(ctx context.Context, p Pinger) string {
 	return "ok"
 }
 
-func New(handler subscriptionHandler, internal internalHandler, apiKey string, m *metrics.Metrics, db, nats Pinger) http.Handler {
+func New(handler subscriptionHandler, apiKey string, m *metrics.Metrics, db, nats Pinger) http.Handler {
 	r := chi.NewRouter()
 
 	r.Use(middleware.SkipRoutes(middleware.Logger, "/metrics", "/health"))
@@ -74,8 +70,6 @@ func New(handler subscriptionHandler, internal internalHandler, apiKey string, m
 
 	r.Handle("/metrics", m.Handler())
 	r.Get("/health", healthHandler(db, nats))
-
-	r.Get("/internal/repositories/{id}/confirmed-subscribers", internal.ListConfirmedByRepositoryID)
 
 	if apiKey != "" {
 		r.Route("/api", func(r chi.Router) {

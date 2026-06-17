@@ -59,7 +59,6 @@ func (s *HandlerTestSuite) SetupTest() {
 	s.svc = new(mockServiceForHandler)
 	s.router = router.New(
 		handler.New(s.svc),
-		&stubInternalHandler{},
 		"",
 		metrics.New(prometheus.NewRegistry()),
 		&stubPinger{},

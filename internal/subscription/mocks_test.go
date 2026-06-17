@@ -2,7 +2,6 @@ package subscription_test
 
 import (
 	"context"
-	"net/http"
 
 	"GithubReleaseNotificationAPI/internal/db"
 	"GithubReleaseNotificationAPI/internal/subscription"
@@ -139,10 +138,6 @@ func (m *mockServiceForHandler) ListByEmail(ctx context.Context, email string) (
 	}
 	return args.Get(0).([]subscription.SubscriptionDetails), args.Error(1)
 }
-
-type stubInternalHandler struct{}
-
-func (*stubInternalHandler) ListConfirmedByRepositoryID(http.ResponseWriter, *http.Request) {}
 
 type stubPinger struct{}
 
