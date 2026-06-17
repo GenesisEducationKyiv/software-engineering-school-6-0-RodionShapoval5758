@@ -202,6 +202,8 @@ func (w *Worker) processRepository(ctx context.Context, repo catalog.Repository,
 		ReleaseURL:  release.URL,
 	}
 
+	// Advance the tag and enqueue the release event atomically:
+	// both operations succeed in the same transaction or both roll back.
 	return w.catalogClient.UpdateLastSeenTagAtomic(ctx, repo.ID, release.Tag, func(ctx context.Context, q db.DBTX) error {
 		return w.enqueuer.Enqueue(ctx, q, dr)
 	})

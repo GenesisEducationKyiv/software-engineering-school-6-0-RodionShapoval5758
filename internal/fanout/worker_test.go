@@ -9,11 +9,10 @@ import (
 
 func TestBuildEvents_MultipleRecipients(t *testing.T) {
 	tests := []struct {
-		name     string
-		release  DetectedRelease
-		recs     []Recipient
-		wantLen  int
-		wantTags []string
+		name    string
+		release DetectedRelease
+		recs    []Recipient
+		wantLen int
 	}{
 		{
 			name: "two recipients get two payloads with correct fields",

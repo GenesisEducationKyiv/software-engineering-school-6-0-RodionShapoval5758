@@ -79,13 +79,17 @@ func (w *Worker) processPending(ctx context.Context) error {
 			continue
 		}
 
+		failed := false
 		for _, payload := range payloads {
 			if err := outbox.Insert(ctx, tx, contract.SubjectRelease, payload); err != nil {
 				slog.Error("fanout: insert outbox", "repo_id", r.RepoID, "error", err)
+				failed = true
 			}
 		}
 
-		processed = append(processed, r.ID)
+		if !failed {
+			processed = append(processed, r.ID)
+		}
 	}
 
 	if len(processed) == 0 {
