@@ -6,6 +6,7 @@ import (
 	"os"
 	"os/signal"
 	"syscall"
+	"time"
 
 	"GithubReleaseNotificationAPI/contract"
 	"GithubReleaseNotificationAPI/services/notification/internal/config"
@@ -48,8 +49,25 @@ func run() error {
 	defer stop()
 
 	_, err = js.CreateOrUpdateStream(ctx, jetstream.StreamConfig{
-		Name:     contract.StreamName,
-		Subjects: []string{contract.SubjectAll},
+		Name:       contract.StreamName,
+		Subjects:   []string{contract.SubjectAll},
+		Storage:    jetstream.FileStorage,
+		Retention:  jetstream.WorkQueuePolicy,
+		Duplicates: 2 * time.Minute,
+		MaxAge:     24 * time.Hour,
+		MaxBytes:   512 * 1024 * 1024,
+	})
+	if err != nil {
+		return err
+	}
+
+	_, err = js.CreateOrUpdateStream(ctx, jetstream.StreamConfig{
+		Name:       contract.StreamDLQ,
+		Subjects:   []string{contract.SubjectDead},
+		Storage:    jetstream.FileStorage,
+		Duplicates: 2 * time.Minute,
+		MaxAge:     7 * 24 * time.Hour,
+		MaxMsgs:    10_000,
 	})
 	if err != nil {
 		return err
@@ -59,6 +77,12 @@ func run() error {
 	c := consumer.New(js, m)
 
 	slog.Info("notification service started")
+
+	go func() {
+		if err := consumer.StartDLQInspector(ctx, js); err != nil {
+			slog.Error("dlq inspector failed", "error", err)
+		}
+	}()
 
 	if err := c.Start(ctx); err != nil {
 		return err

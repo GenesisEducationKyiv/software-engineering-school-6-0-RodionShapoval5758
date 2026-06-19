@@ -1,139 +1,90 @@
 package consumer
 
 import (
-	"encoding/json"
 	"errors"
 	"testing"
 
 	"GithubReleaseNotificationAPI/contract"
+
+	"github.com/stretchr/testify/assert"
 )
 
-type stubMailer struct {
-	confirmCalled bool
-	confirmArgs   [3]string
-	releaseCalled bool
-	releaseArgs   [5]string
-	err           error
+type mockMailer struct {
+	confirmErr error
+	releaseErr error
 }
 
-func (s *stubMailer) SendConfirmation(toEmail, repoName, confirmToken string) error {
-	s.confirmCalled = true
-	s.confirmArgs = [3]string{toEmail, repoName, confirmToken}
-	return s.err
+func (m *mockMailer) SendConfirmation(toEmail, repoName, confirmToken string) error {
+	return m.confirmErr
 }
 
-func (s *stubMailer) SendRelease(toEmail, unsubscribeToken, releaseTag, releaseName, releaseURL string) error {
-	s.releaseCalled = true
-	s.releaseArgs = [5]string{toEmail, unsubscribeToken, releaseTag, releaseName, releaseURL}
-	return s.err
+func (m *mockMailer) SendRelease(toEmail, unsubscribeToken, releaseTag, releaseName, releaseURL string) error {
+	return m.releaseErr
 }
 
-func TestProcessMessage_Confirmation(t *testing.T) {
-	ev := contract.ConfirmationRequested{
-		Email:        "user@example.com",
-		RepoName:     "owner/repo",
-		ConfirmToken: "tok123",
-	}
-	data, _ := json.Marshal(ev)
+var (
+	validConfirmation = []byte(`{"email":"a@b.com","repo_name":"owner/repo","confirm_token":"tok"}`)
+	validRelease      = []byte(`{"email":"a@b.com","unsubscribe_token":"tok","release_tag":"v1","release_name":"Release v1","release_url":"https://example.com"}`)
+	badJSON           = []byte(`not json`)
+)
 
-	m := &stubMailer{}
-	ack, term := processMessage(contract.SubjectConfirmation, data, m)
+func TestDecideAction(t *testing.T) {
+	tests := []struct {
+		name     string
+		oc       outcome
+		num      uint64
+		expected action
+	}{
+		{"ack always acks", outcomeAck, 1, actionAck},
+		{"poison always dlqs", outcomePoison, 1, actionDLQ},
+		{"retry below max naks", outcomeRetry, maxDeliver - 1, actionNak},
+		{"retry at max dlqs", outcomeRetry, maxDeliver, actionDLQ},
+		{"retry above max dlqs", outcomeRetry, maxDeliver + 1, actionDLQ},
+	}
 
-	if !ack || term {
-		t.Fatalf("expected ack=true term=false, got ack=%v term=%v", ack, term)
-	}
-	if !m.confirmCalled {
-		t.Fatal("SendConfirmation not called")
-	}
-	if m.confirmArgs != [3]string{"user@example.com", "owner/repo", "tok123"} {
-		t.Fatalf("unexpected args: %v", m.confirmArgs)
-	}
-}
-
-func TestProcessMessage_Release(t *testing.T) {
-	ev := contract.ReleaseDetected{
-		Email:            "user@example.com",
-		UnsubscribeToken: "unsub456",
-		ReleaseTag:       "v1.2.3",
-		ReleaseName:      "My Release",
-		ReleaseURL:       "https://github.com/owner/repo/releases/tag/v1.2.3",
-	}
-	data, _ := json.Marshal(ev)
-
-	m := &stubMailer{}
-	ack, term := processMessage(contract.SubjectRelease, data, m)
-
-	if !ack || term {
-		t.Fatalf("expected ack=true term=false, got ack=%v term=%v", ack, term)
-	}
-	if !m.releaseCalled {
-		t.Fatal("SendRelease not called")
-	}
-	want := [5]string{"user@example.com", "unsub456", "v1.2.3", "My Release", "https://github.com/owner/repo/releases/tag/v1.2.3"}
-	if m.releaseArgs != want {
-		t.Fatalf("unexpected args: %v", m.releaseArgs)
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			assert.Equal(t, tt.expected, decideAction(tt.oc, tt.num))
+		})
 	}
 }
 
-func TestProcessMessage_SendConfirmationFailure(t *testing.T) {
-	ev := contract.ConfirmationRequested{Email: "a@b.com", RepoName: "r", ConfirmToken: "t"}
-	data, _ := json.Marshal(ev)
+func TestProcessMessage(t *testing.T) {
+	smtpErr := errors.New("smtp down")
 
-	m := &stubMailer{err: errors.New("smtp down")}
-	ack, term := processMessage(contract.SubjectConfirmation, data, m)
+	tests := []struct {
+		name            string
+		subject         string
+		data            []byte
+		confirmErr      error
+		releaseErr      error
+		expectedOutcome outcome
+	}{
+		{"confirmation success", contract.SubjectConfirmation, validConfirmation, nil, nil, outcomeAck},
+		{"confirmation bad json", contract.SubjectConfirmation, badJSON, nil, nil, outcomePoison},
+		{"confirmation mailer error", contract.SubjectConfirmation, validConfirmation, smtpErr, nil, outcomeRetry},
+		{"release success", contract.SubjectRelease, validRelease, nil, nil, outcomeAck},
+		{"release bad json", contract.SubjectRelease, badJSON, nil, nil, outcomePoison},
+		{"release mailer error", contract.SubjectRelease, validRelease, nil, smtpErr, outcomeRetry},
+		{"unknown subject acks", "notifications.unknown", validRelease, nil, nil, outcomeAck},
+	}
 
-	if ack || term {
-		t.Fatalf("expected ack=false term=false on send failure, got ack=%v term=%v", ack, term)
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			m := &mockMailer{confirmErr: tt.confirmErr, releaseErr: tt.releaseErr}
+			oc, _ := processMessage(tt.subject, tt.data, m)
+			assert.Equal(t, tt.expectedOutcome, oc)
+		})
 	}
 }
 
-func TestProcessMessage_SendReleaseFailure(t *testing.T) {
-	ev := contract.ReleaseDetected{
-		Email:            "user@example.com",
-		UnsubscribeToken: "tok",
-		ReleaseTag:       "v1",
-		ReleaseName:      "R",
-		ReleaseURL:       "http://x",
-	}
-	data, _ := json.Marshal(ev)
+func TestBuildDeadLetter(t *testing.T) {
+	data := []byte(`{"email":"a@b.com"}`)
+	dl := buildDeadLetter(contract.SubjectRelease, data, "smtp down", 5)
 
-	m := &stubMailer{err: errors.New("smtp down")}
-	ack, term := processMessage(contract.SubjectRelease, data, m)
-
-	if ack || term {
-		t.Fatalf("expected ack=false term=false on send failure, got ack=%v term=%v", ack, term)
-	}
-}
-
-func TestProcessMessage_BadJSONConfirmation(t *testing.T) {
-	m := &stubMailer{}
-	ack, term := processMessage(contract.SubjectConfirmation, []byte("not-json"), m)
-
-	if ack || !term {
-		t.Fatalf("expected ack=false term=true on bad JSON, got ack=%v term=%v", ack, term)
-	}
-	if m.confirmCalled {
-		t.Fatal("SendConfirmation should not have been called")
-	}
-}
-
-func TestProcessMessage_BadJSONRelease(t *testing.T) {
-	m := &stubMailer{}
-	ack, term := processMessage(contract.SubjectRelease, []byte("{bad"), m)
-
-	if ack || !term {
-		t.Fatalf("expected ack=false term=true on bad JSON, got ack=%v term=%v", ack, term)
-	}
-}
-
-func TestProcessMessage_UnknownSubject(t *testing.T) {
-	m := &stubMailer{}
-	ack, term := processMessage("notifications.something-else", []byte("{}"), m)
-
-	if !ack || term {
-		t.Fatalf("expected ack=true term=false for unknown subject, got ack=%v term=%v", ack, term)
-	}
-	if m.confirmCalled || m.releaseCalled {
-		t.Fatal("no send should be called for unknown subject")
-	}
+	assert.Equal(t, contract.SubjectRelease, dl.OriginalSubject)
+	assert.Equal(t, "smtp down", dl.Reason)
+	assert.Equal(t, uint64(5), dl.Attempts)
+	assert.NotZero(t, dl.FailedAt)
+	assert.JSONEq(t, `{"email":"a@b.com"}`, string(dl.Payload))
 }
