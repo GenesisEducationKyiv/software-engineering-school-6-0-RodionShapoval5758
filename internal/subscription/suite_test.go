@@ -8,7 +8,6 @@ import (
 	"testing"
 
 	"GithubReleaseNotificationAPI/internal/metrics"
-	"GithubReleaseNotificationAPI/internal/subscription"
 	"GithubReleaseNotificationAPI/internal/transport/http/handler"
 	"GithubReleaseNotificationAPI/internal/transport/http/respond"
 	"GithubReleaseNotificationAPI/internal/transport/http/router"
@@ -17,48 +16,23 @@ import (
 	"github.com/stretchr/testify/suite"
 )
 
-type ServiceTestSuite struct {
-	suite.Suite
-
-	subRepo *mockSubscriptionRepository
-	catalog *mockCatalogClient
-	github  *mockGithubClient
-	outbox  *mockOutboxWriter
-
-	svc *subscription.Service
-}
-
-func (s *ServiceTestSuite) SetupTest() {
-	s.subRepo = new(mockSubscriptionRepository)
-	s.catalog = new(mockCatalogClient)
-	s.github = new(mockGithubClient)
-	s.outbox = new(mockOutboxWriter)
-
-	s.svc = subscription.NewService(s.subRepo, s.catalog, s.github, s.outbox, &fakeTxBeginner{})
-}
-
-func (s *ServiceTestSuite) assertExpectations() {
-	s.subRepo.AssertExpectations(s.T())
-	s.catalog.AssertExpectations(s.T())
-	s.github.AssertExpectations(s.T())
-	s.outbox.AssertExpectations(s.T())
-}
-
-func TestServiceTestSuite(t *testing.T) {
-	suite.Run(t, new(ServiceTestSuite))
-}
-
 type HandlerTestSuite struct {
 	suite.Suite
 
-	svc    *mockServiceForHandler
+	sub    *mockSubscriber
+	conf   *mockConfirmer
+	unsub  *mockUnsubscriber
+	list   *mockLister
 	router http.Handler
 }
 
 func (s *HandlerTestSuite) SetupTest() {
-	s.svc = new(mockServiceForHandler)
+	s.sub = new(mockSubscriber)
+	s.conf = new(mockConfirmer)
+	s.unsub = new(mockUnsubscriber)
+	s.list = new(mockLister)
 	s.router = router.New(
-		handler.New(s.svc),
+		handler.New(s.sub, s.conf, s.unsub, s.list),
 		"",
 		metrics.New(prometheus.NewRegistry()),
 		&stubPinger{},
@@ -67,7 +41,14 @@ func (s *HandlerTestSuite) SetupTest() {
 }
 
 func (s *HandlerTestSuite) assertExpectations() {
-	s.svc.AssertExpectations(s.T())
+	s.sub.AssertExpectations(s.T())
+	s.conf.AssertExpectations(s.T())
+	s.unsub.AssertExpectations(s.T())
+	s.list.AssertExpectations(s.T())
+}
+
+func TestHandlerTestSuite(t *testing.T) {
+	suite.Run(t, new(HandlerTestSuite))
 }
 
 func (s *HandlerTestSuite) performRequest(method, target, body, contentType string) *httptest.ResponseRecorder {
@@ -96,8 +77,4 @@ func (s *HandlerTestSuite) requireJSONResponse(rec *httptest.ResponseRecorder, s
 	s.Equal(status, rec.Code)
 	s.Equal("application/json", rec.Header().Get("Content-Type"))
 	s.Require().NoError(json.Unmarshal(rec.Body.Bytes(), target))
-}
-
-func TestHandlerTestSuite(t *testing.T) {
-	suite.Run(t, new(HandlerTestSuite))
 }

@@ -14,19 +14,36 @@ import (
 	"github.com/go-chi/chi/v5"
 )
 
-type subscriptionService interface {
-	Subscribe(ctx context.Context, email string, repo string) error
-	Confirm(ctx context.Context, token string) error
-	Unsubscribe(ctx context.Context, token string) error
-	ListByEmail(ctx context.Context, email string) ([]subscription.SubscriptionDetails, error)
+type subscriber interface {
+	Execute(ctx context.Context, email, repo string) error
+}
+
+type confirmer interface {
+	Execute(ctx context.Context, token string) error
+}
+
+type unsubscriber interface {
+	Execute(ctx context.Context, token string) error
+}
+
+type lister interface {
+	ByEmail(ctx context.Context, email string) ([]subscription.SubscriptionDetails, error)
 }
 
 type Handler struct {
-	svc subscriptionService
+	subscriber   subscriber
+	confirmer    confirmer
+	unsubscriber unsubscriber
+	lister       lister
 }
 
-func New(svc subscriptionService) *Handler {
-	return &Handler{svc: svc}
+func New(sub subscriber, conf confirmer, unsub unsubscriber, list lister) *Handler {
+	return &Handler{
+		subscriber:   sub,
+		confirmer:    conf,
+		unsubscriber: unsub,
+		lister:       list,
+	}
 }
 
 type subscriptionRequest struct {
@@ -74,7 +91,7 @@ func (h *Handler) Subscribe(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if err := h.svc.Subscribe(r.Context(), req.Email, req.Repo); err != nil {
+	if err := h.subscriber.Execute(r.Context(), req.Email, req.Repo); err != nil {
 		handleError(w, r, err)
 
 		return
@@ -94,7 +111,7 @@ func (h *Handler) Confirm(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if err := h.svc.Confirm(r.Context(), token); err != nil {
+	if err := h.confirmer.Execute(r.Context(), token); err != nil {
 		handleError(w, r, err)
 
 		return
@@ -114,7 +131,7 @@ func (h *Handler) Unsubscribe(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if err := h.svc.Unsubscribe(r.Context(), token); err != nil {
+	if err := h.unsubscriber.Execute(r.Context(), token); err != nil {
 		handleError(w, r, err)
 
 		return
@@ -134,7 +151,7 @@ func (h *Handler) ListSubscriptions(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	details, err := h.svc.ListByEmail(r.Context(), email)
+	details, err := h.lister.ByEmail(r.Context(), email)
 	if err != nil {
 		handleError(w, r, err)
 

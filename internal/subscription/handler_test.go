@@ -17,7 +17,7 @@ type subscriptionResp struct {
 }
 
 func (s *HandlerTestSuite) TestSubscribe_JSONHappyPath() {
-	s.svc.On("Subscribe", mock.Anything, "user@example.com", "owner/repo").Return(nil)
+	s.sub.On("Execute", mock.Anything, "user@example.com", "owner/repo").Return(nil)
 
 	rec := s.performRequest(http.MethodPost, "/api/subscribe", `{"email":"user@example.com","repo":"owner/repo"}`, "application/json")
 
@@ -28,7 +28,7 @@ func (s *HandlerTestSuite) TestSubscribe_JSONHappyPath() {
 }
 
 func (s *HandlerTestSuite) TestSubscribe_FormHappyPath() {
-	s.svc.On("Subscribe", mock.Anything, "user@example.com", "owner/repo").Return(nil)
+	s.sub.On("Execute", mock.Anything, "user@example.com", "owner/repo").Return(nil)
 
 	rec := s.performRequest(http.MethodPost, "/api/subscribe", "email=user%40example.com&repo=owner%2Frepo", "application/x-www-form-urlencoded")
 
@@ -54,7 +54,7 @@ func (s *HandlerTestSuite) TestSubscribe_BadRequestBeforeService() {
 			s.SetupTest()
 			rec := s.performRequest(http.MethodPost, "/api/subscribe", tc.body, tc.contentType)
 			s.requireErrorResponse(rec, http.StatusBadRequest)
-			s.svc.AssertNotCalled(s.T(), "Subscribe", mock.Anything, mock.Anything, mock.Anything)
+			s.sub.AssertNotCalled(s.T(), "Execute", mock.Anything, mock.Anything, mock.Anything)
 			s.assertExpectations()
 		})
 	}
@@ -78,7 +78,7 @@ func (s *HandlerTestSuite) TestSubscribe_ServiceErrors() {
 	for _, tc := range cases {
 		s.Run(tc.name, func() {
 			s.SetupTest()
-			s.svc.On("Subscribe", mock.Anything, "user@example.com", "owner/repo").Return(tc.err)
+			s.sub.On("Execute", mock.Anything, "user@example.com", "owner/repo").Return(tc.err)
 
 			rec := s.performRequest(http.MethodPost, "/api/subscribe", `{"email":"user@example.com","repo":"owner/repo"}`, "application/json")
 
@@ -89,7 +89,7 @@ func (s *HandlerTestSuite) TestSubscribe_ServiceErrors() {
 }
 
 func (s *HandlerTestSuite) TestConfirm_HappyPath() {
-	s.svc.On("Confirm", mock.Anything, "confirm-token").Return(nil)
+	s.conf.On("Execute", mock.Anything, "confirm-token").Return(nil)
 
 	rec := s.performRequest(http.MethodGet, "/api/confirm/confirm-token", "", "")
 
@@ -112,7 +112,7 @@ func (s *HandlerTestSuite) TestConfirm_ServiceErrors() {
 	for _, tc := range cases {
 		s.Run(tc.name, func() {
 			s.SetupTest()
-			s.svc.On("Confirm", mock.Anything, "confirm-token").Return(tc.err)
+			s.conf.On("Execute", mock.Anything, "confirm-token").Return(tc.err)
 
 			rec := s.performRequest(http.MethodGet, "/api/confirm/confirm-token", "", "")
 
@@ -123,7 +123,7 @@ func (s *HandlerTestSuite) TestConfirm_ServiceErrors() {
 }
 
 func (s *HandlerTestSuite) TestUnsubscribe_HappyPath() {
-	s.svc.On("Unsubscribe", mock.Anything, "unsubscribe-token").Return(nil)
+	s.unsub.On("Execute", mock.Anything, "unsubscribe-token").Return(nil)
 
 	rec := s.performRequest(http.MethodGet, "/api/unsubscribe/unsubscribe-token", "", "")
 
@@ -137,7 +137,7 @@ func (s *HandlerTestSuite) TestUnsubscribe_ShortToken() {
 	rec := s.performRequest(http.MethodGet, "/api/unsubscribe/short", "", "")
 
 	s.requireErrorResponse(rec, http.StatusBadRequest)
-	s.svc.AssertNotCalled(s.T(), "Unsubscribe", mock.Anything, mock.Anything)
+	s.unsub.AssertNotCalled(s.T(), "Execute", mock.Anything, mock.Anything)
 	s.assertExpectations()
 }
 
@@ -154,7 +154,7 @@ func (s *HandlerTestSuite) TestUnsubscribe_ServiceErrors() {
 	for _, tc := range cases {
 		s.Run(tc.name, func() {
 			s.SetupTest()
-			s.svc.On("Unsubscribe", mock.Anything, "unsubscribe-token").Return(tc.err)
+			s.unsub.On("Execute", mock.Anything, "unsubscribe-token").Return(tc.err)
 
 			rec := s.performRequest(http.MethodGet, "/api/unsubscribe/unsubscribe-token", "", "")
 
@@ -169,7 +169,7 @@ func (s *HandlerTestSuite) TestListSubscriptions_HappyPath() {
 		{Email: "user@example.com", Repo: "owner/repo", Confirmed: true, LastSeenTag: "v1.0.0"},
 		{Email: "user@example.com", Repo: "owner/other", Confirmed: false},
 	}
-	s.svc.On("ListByEmail", mock.Anything, "user@example.com").Return(subs, nil)
+	s.list.On("ByEmail", mock.Anything, "user@example.com").Return(subs, nil)
 
 	rec := s.performRequest(http.MethodGet, "/api/subscriptions?email=user%40example.com", "", "")
 
@@ -188,12 +188,12 @@ func (s *HandlerTestSuite) TestListSubscriptions_MissingEmail() {
 	rec := s.performRequest(http.MethodGet, "/api/subscriptions", "", "")
 
 	s.requireErrorResponse(rec, http.StatusBadRequest)
-	s.svc.AssertNotCalled(s.T(), "ListByEmail", mock.Anything, mock.Anything)
+	s.list.AssertNotCalled(s.T(), "ByEmail", mock.Anything, mock.Anything)
 	s.assertExpectations()
 }
 
 func (s *HandlerTestSuite) TestListSubscriptions_EmptyList() {
-	s.svc.On("ListByEmail", mock.Anything, "user@example.com").Return([]subscription.SubscriptionDetails{}, nil)
+	s.list.On("ByEmail", mock.Anything, "user@example.com").Return([]subscription.SubscriptionDetails{}, nil)
 
 	rec := s.performRequest(http.MethodGet, "/api/subscriptions?email=user%40example.com", "", "")
 
@@ -217,7 +217,7 @@ func (s *HandlerTestSuite) TestListSubscriptions_ServiceErrors() {
 	for _, tc := range cases {
 		s.Run(tc.name, func() {
 			s.SetupTest()
-			s.svc.On("ListByEmail", mock.Anything, "user@example.com").Return(nil, tc.err)
+			s.list.On("ByEmail", mock.Anything, "user@example.com").Return(nil, tc.err)
 
 			rec := s.performRequest(http.MethodGet, "/api/subscriptions?email=user%40example.com", "", "")
 

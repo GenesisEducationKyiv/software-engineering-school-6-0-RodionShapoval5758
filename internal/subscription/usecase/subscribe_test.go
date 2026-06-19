@@ -1,4 +1,4 @@
-package subscription_test
+package usecase_test
 
 import (
 	"context"
@@ -6,8 +6,8 @@ import (
 
 	"GithubReleaseNotificationAPI/internal/subscription"
 
+	"GithubReleaseNotificationAPI/internal/db"
 	githubclient "GithubReleaseNotificationAPI/internal/github"
-	"GithubReleaseNotificationAPI/internal/shared"
 
 	"github.com/stretchr/testify/mock"
 )
@@ -21,7 +21,7 @@ func validSubMatcher(email string, repoID int64) any {
 	})
 }
 
-func (s *ServiceTestSuite) TestSubscribe_InvalidInput() {
+func (s *UseCaseSuite) TestSubscribe_InvalidInput() {
 	cases := []struct {
 		name    string
 		email   string
@@ -40,7 +40,7 @@ func (s *ServiceTestSuite) TestSubscribe_InvalidInput() {
 		s.Run(tc.name, func() {
 			s.SetupTest()
 
-			err := s.svc.Subscribe(context.Background(), tc.email, tc.repo)
+			err := s.subscribe.Execute(context.Background(), tc.email, tc.repo)
 
 			s.ErrorIs(err, tc.wantErr)
 			s.assertExpectations()
@@ -48,126 +48,126 @@ func (s *ServiceTestSuite) TestSubscribe_InvalidInput() {
 	}
 }
 
-func (s *ServiceTestSuite) TestSubscribe_NormalizesInput() {
+func (s *UseCaseSuite) TestSubscribe_NormalizesInput() {
 	s.github.On("CheckRepo", mock.Anything, "owner/repo").Return(nil)
 	s.catalog.On("Ensure", mock.Anything, "owner/repo").Return(1, nil)
-	s.subRepo.On("CreateInTx", mock.Anything, validSubMatcher("user@example.com", int64(1))).
+	s.repo.On("CreateInTx", mock.Anything, validSubMatcher("user@example.com", int64(1))).
 		Return(nil)
 	s.outbox.On("Insert", mock.Anything, mock.Anything, mock.Anything).Return(nil)
 
-	err := s.svc.Subscribe(context.Background(), "  user@example.com  ", "  owner/repo  ")
+	err := s.subscribe.Execute(context.Background(), "  user@example.com  ", "  owner/repo  ")
 
 	s.NoError(err)
 	s.assertExpectations()
 }
 
-func (s *ServiceTestSuite) TestSubscribe_GithubRepoNotFound() {
-	s.github.On("CheckRepo", mock.Anything, "owner/repo").Return(shared.ErrNotFound)
+func (s *UseCaseSuite) TestSubscribe_GithubRepoNotFound() {
+	s.github.On("CheckRepo", mock.Anything, "owner/repo").Return(db.ErrNotFound)
 
-	err := s.svc.Subscribe(context.Background(), "user@example.com", "owner/repo")
+	err := s.subscribe.Execute(context.Background(), "user@example.com", "owner/repo")
 
 	s.ErrorIs(err, subscription.ErrRepoNotFound)
 	s.assertExpectations()
 }
 
-func (s *ServiceTestSuite) TestSubscribe_GithubRateLimited() {
+func (s *UseCaseSuite) TestSubscribe_GithubRateLimited() {
 	s.github.On("CheckRepo", mock.Anything, "owner/repo").Return(githubclient.ErrRateLimited)
 
-	err := s.svc.Subscribe(context.Background(), "user@example.com", "owner/repo")
+	err := s.subscribe.Execute(context.Background(), "user@example.com", "owner/repo")
 
 	s.ErrorIs(err, subscription.ErrTooMuchRequests)
 	s.assertExpectations()
 }
 
-func (s *ServiceTestSuite) TestSubscribe_GithubUnauthorized() {
+func (s *UseCaseSuite) TestSubscribe_GithubUnauthorized() {
 	s.github.On("CheckRepo", mock.Anything, "owner/repo").Return(githubclient.ErrUnauthorized)
 
-	err := s.svc.Subscribe(context.Background(), "user@example.com", "owner/repo")
+	err := s.subscribe.Execute(context.Background(), "user@example.com", "owner/repo")
 
 	s.ErrorIs(err, subscription.ErrGitHubUnauthorized)
 	s.assertExpectations()
 }
 
-func (s *ServiceTestSuite) TestSubscribe_GithubUnknownError() {
+func (s *UseCaseSuite) TestSubscribe_GithubUnknownError() {
 	s.github.On("CheckRepo", mock.Anything, "owner/repo").Return(errors.New("network timeout"))
 
-	err := s.svc.Subscribe(context.Background(), "user@example.com", "owner/repo")
+	err := s.subscribe.Execute(context.Background(), "user@example.com", "owner/repo")
 
 	s.Error(err)
 	s.assertExpectations()
 }
 
-func (s *ServiceTestSuite) TestSubscribe_CatalogEnsureError() {
+func (s *UseCaseSuite) TestSubscribe_CatalogEnsureError() {
 	s.github.On("CheckRepo", mock.Anything, "owner/repo").Return(nil)
 	s.catalog.On("Ensure", mock.Anything, "owner/repo").Return(0, errors.New("db error"))
 
-	err := s.svc.Subscribe(context.Background(), "user@example.com", "owner/repo")
+	err := s.subscribe.Execute(context.Background(), "user@example.com", "owner/repo")
 
 	s.Error(err)
 	s.assertExpectations()
 }
 
-func (s *ServiceTestSuite) TestSubscribe_SubscriptionAlreadyExists() {
+func (s *UseCaseSuite) TestSubscribe_SubscriptionAlreadyExists() {
 	s.github.On("CheckRepo", mock.Anything, "owner/repo").Return(nil)
 	s.catalog.On("Ensure", mock.Anything, "owner/repo").Return(1, nil)
-	s.subRepo.On("CreateInTx", mock.Anything, validSubMatcher("user@example.com", int64(1))).
-		Return(shared.ErrAlreadyExists)
+	s.repo.On("CreateInTx", mock.Anything, validSubMatcher("user@example.com", int64(1))).
+		Return(db.ErrAlreadyExists)
 
-	err := s.svc.Subscribe(context.Background(), "user@example.com", "owner/repo")
+	err := s.subscribe.Execute(context.Background(), "user@example.com", "owner/repo")
 
 	s.ErrorIs(err, subscription.ErrSubscriptionAlreadyExists)
 	s.assertExpectations()
 }
 
-func (s *ServiceTestSuite) TestSubscribe_TokenCollisionRetry() {
+func (s *UseCaseSuite) TestSubscribe_TokenCollisionRetry() {
 	s.github.On("CheckRepo", mock.Anything, "owner/repo").Return(nil)
 	s.catalog.On("Ensure", mock.Anything, "owner/repo").Return(1, nil)
 
 	matcher := validSubMatcher("user@example.com", int64(1))
 
-	s.subRepo.On("CreateInTx", mock.Anything, matcher).Return(shared.ErrTokenConflict).Once()
-	s.subRepo.On("CreateInTx", mock.Anything, matcher).Return(nil).Once()
+	s.repo.On("CreateInTx", mock.Anything, matcher).Return(db.ErrTokenConflict).Once()
+	s.repo.On("CreateInTx", mock.Anything, matcher).Return(nil).Once()
 	s.outbox.On("Insert", mock.Anything, mock.Anything, mock.Anything).Return(nil)
 
-	err := s.svc.Subscribe(context.Background(), "user@example.com", "owner/repo")
+	err := s.subscribe.Execute(context.Background(), "user@example.com", "owner/repo")
 
 	s.NoError(err)
 	s.assertExpectations()
 }
 
-func (s *ServiceTestSuite) TestSubscribe_TokenCollisionExhausted() {
+func (s *UseCaseSuite) TestSubscribe_TokenCollisionExhausted() {
 	s.github.On("CheckRepo", mock.Anything, "owner/repo").Return(nil)
 	s.catalog.On("Ensure", mock.Anything, "owner/repo").Return(1, nil)
-	s.subRepo.On("CreateInTx", mock.Anything, validSubMatcher("user@example.com", int64(1))).
-		Return(shared.ErrTokenConflict).Times(5)
+	s.repo.On("CreateInTx", mock.Anything, validSubMatcher("user@example.com", int64(1))).
+		Return(db.ErrTokenConflict).Times(5)
 
-	err := s.svc.Subscribe(context.Background(), "user@example.com", "owner/repo")
+	err := s.subscribe.Execute(context.Background(), "user@example.com", "owner/repo")
 
 	s.Error(err)
 	s.assertExpectations()
 }
 
-func (s *ServiceTestSuite) TestSubscribe_SubscriptionDBError() {
+func (s *UseCaseSuite) TestSubscribe_SubscriptionDBError() {
 	s.github.On("CheckRepo", mock.Anything, "owner/repo").Return(nil)
 	s.catalog.On("Ensure", mock.Anything, "owner/repo").Return(1, nil)
-	s.subRepo.On("CreateInTx", mock.Anything, validSubMatcher("user@example.com", int64(1))).
+	s.repo.On("CreateInTx", mock.Anything, validSubMatcher("user@example.com", int64(1))).
 		Return(errors.New("db error"))
 
-	err := s.svc.Subscribe(context.Background(), "user@example.com", "owner/repo")
+	err := s.subscribe.Execute(context.Background(), "user@example.com", "owner/repo")
 
 	s.Error(err)
 	s.assertExpectations()
 }
 
-func (s *ServiceTestSuite) TestSubscribe_OutboxEnqueueFails() {
+func (s *UseCaseSuite) TestSubscribe_OutboxEnqueueFails() {
 	s.github.On("CheckRepo", mock.Anything, "owner/repo").Return(nil)
 	s.catalog.On("Ensure", mock.Anything, "owner/repo").Return(1, nil)
-	s.subRepo.On("CreateInTx", mock.Anything, validSubMatcher("user@example.com", int64(1))).
+	s.repo.On("CreateInTx", mock.Anything, validSubMatcher("user@example.com", int64(1))).
 		Return(nil)
 	s.outbox.On("Insert", mock.Anything, mock.Anything, mock.Anything).
 		Return(errors.New("broker down"))
 
-	err := s.svc.Subscribe(context.Background(), "user@example.com", "owner/repo")
+	err := s.subscribe.Execute(context.Background(), "user@example.com", "owner/repo")
 
 	s.Error(err)
 	s.assertExpectations()
