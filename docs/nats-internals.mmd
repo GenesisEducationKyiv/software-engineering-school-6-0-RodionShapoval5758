@@ -1,28 +1,44 @@
 flowchart LR
     subgraph api ["API Service"]
-        SS["SubscriptionService\nSubscribe()"]
-        W["monitoring.Worker\nStart() every 25s"]
-        RN["ReleaseNotifier\nNotifySubscribers()"]
-        PUB["notifier.Publisher\nwraps jetstream.JetStream"]
+        SS["subscription.Service\nSubscribe()"]
+        W["monitoring.Worker\nStart() every 25 s"]
+        FW["fanout.Worker\nRun() every 1 s"]
+        OR["outbox.Relay\nRun() every 1 s"]
     end
 
-    subgraph stream ["NATS JetStream — Stream: NOTIFICATIONS\nStorage: File · Subjects: notifications.>"]
+    subgraph db ["PostgreSQL"]
+        OB["outbox\nsubject · payload · published_at"]
+        DR["detected_releases\nrepo_id · release_tag · processed_at"]
+    end
+
+    subgraph stream ["NATS JetStream — Stream: NOTIFICATIONS\nStorage: File · Subjects: notifications.> · Duplicates: 2 min"]
         SC["notifications.confirmation\nConfirmationRequested\n{ email, repo_name, confirm_token }"]
-        SR["notifications.release\nReleasePublished\n{ email, unsubscribe_token, release_tag, release_name, release_url }"]
-        CONS["Durable Consumer: notification-consumer\nFilterSubject: notifications.>\nDeliverPolicy: All · AckPolicy: Explicit"]
+        SR["notifications.release\nReleaseDetected\n{ email, unsubscribe_token, release_tag, release_name, release_url }"]
+        CONS["Durable Consumer: notification-consumer\nFilterSubject: notifications.>\nDeliverPolicy: All · AckPolicy: Explicit · MaxDeliver: 5"]
+    end
+
+    subgraph dlq ["NATS JetStream — Stream: NOTIFICATIONS_DLQ\nStorage: File · Subject: dlq.notifications · Duplicates: 2 min"]
+        SD["dlq.notifications\nDeadLetter\n{ original_subject, payload, reason, attempts, failed_at }"]
+        DLQC["Durable Consumer: notification-dlq-consumer\nFilterSubject: dlq.notifications\nDeliverPolicy: All · AckPolicy: Explicit"]
     end
 
     subgraph notif ["Notification Service"]
         CON["consumer.Consumer\nStart()"]
         MAIL["mailer.Mailer"]
+        DLQI["dlq inspector\nStartDLQInspector()"]
     end
 
-    SS -->|"SendConfirmation()"| PUB
-    W --> RN
-    RN -->|"SendReleaseEmails()"| PUB
+    SS -->|"INSERT outbox (notifications.confirmation)\nin Postgres tx with subscription row"| OB
+    W -->|"INSERT detected_releases via fanout.Enqueue\nin atomic tx with last_seen_tag update"| DR
 
-    PUB -->|"js.Publish, ctx 5s"| SC
-    PUB -->|"js.Publish, ctx 5s"| SR
+    FW -->|"SELECT FOR UPDATE SKIP LOCKED"| DR
+    FW -->|"INSERT outbox (notifications.release) per recipient\nin Postgres tx"| OB
+    FW -->|"UPDATE processed_at"| DR
+
+    OR -->|"SELECT FOR UPDATE SKIP LOCKED"| OB
+    OR -->|"js.Publish WithMsgID(outbox.id) → PubAck"| SC
+    OR -->|"js.Publish WithMsgID(outbox.id) → PubAck"| SR
+    OR -->|"UPDATE published_at"| OB
 
     SC --> CONS
     SR --> CONS
@@ -30,8 +46,11 @@ flowchart LR
     CONS -->|push msg| CON
 
     CON -->|"Ack — success"| CONS
-    CON -->|"Nak — send failed, redeliver"| CONS
-    CON -->|"Term — bad JSON, drop"| CONS
+    CON -->|"Nak — transient failure, redeliver"| CONS
+    CON -->|"retries exhausted OR bad JSON\njs.Publish WithMsgID(stream.seq) → Ack"| SD
 
     CON -->|"SendConfirmation()"| MAIL
     CON -->|"SendRelease()"| MAIL
+
+    SD --> DLQC -->|push msg| DLQI
+    DLQI -->|"slog.Error — original_subject, reason, attempts\nAck"| DLQC

@@ -1,5 +1,5 @@
 graph LR
-    PG[(PostgreSQL)]
+    PG[(PostgreSQL\nsubscriptions · repositories\ndetected_releases · outbox)]
     GH[GitHub API]
     SMTP[SMTP]
 
@@ -14,39 +14,55 @@ graph LR
             CSTORE["store 🔒"]
         end
         subgraph MON["internal/monitoring"]
-            WORK["Worker"]
-            RNOTIF["ReleaseNotifier"]
+            WORK["Worker · every 25 s"]
         end
-        PUB["internal/notifier — Publisher"]
+        subgraph FANOUT["internal/fanout"]
+            FW["Worker · every 1 s"]
+            FENQ["Enqueue"]
+        end
+        subgraph OUTBOX["internal/outbox"]
+            OINS["Insert"]
+            RELAY["Relay · every 1 s"]
+        end
     end
 
     subgraph CONTRACT["contract — shared go module"]
-        EVT["ConfirmationRequested · ReleasePublished\nStream · Subject constants"]
+        EVT["ConfirmationRequested · ReleaseDetected · DeadLetter\nStream · Subject · StreamDLQ · SubjectDead constants"]
     end
 
-    subgraph NATS_SVC["NATS JetStream — Stream: NOTIFICATIONS"]
+    subgraph NATS_SVC["NATS JetStream — Stream: NOTIFICATIONS\nStorage: File · Subjects: notifications.> · Duplicates: 2 min"]
         NC["notifications.confirmation"]
         NR["notifications.release"]
     end
 
+    subgraph NATS_DLQ["NATS JetStream — Stream: NOTIFICATIONS_DLQ\nStorage: File · Subject: dlq.notifications · Duplicates: 2 min"]
+        ND["dlq.notifications\nDeadLetter envelope"]
+    end
+
     subgraph NSVC["Binary — notification-service"]
-        CONS["consumer — durable pull\nAck · Term · Nak"]
+        CONS["consumer — durable notification-consumer\nAck · Nak · DLQ · MaxDeliver 5"]
+        DLQC["dlq inspector — durable notification-dlq-consumer\nlogs ERROR on receipt · Ack"]
         SMAIL["mailer — SMTPMailer"]
     end
 
     SHDL --> SSVC
-    SSVC --> SSTORE & CSVC & PUB
-    CSVC --> CSTORE
-    WORK --> CSVC & RNOTIF
-    RNOTIF --> SSVC & PUB
+    SSVC --> SSTORE & CSVC & OINS
+    SSVC --> GH
 
-    PUB --> NC & NR
+    CSVC --> CSTORE & FENQ
+    WORK --> CSVC & GH
+
+    FW --> SSVC & OINS
+    FW --> PG
+
+    SSTORE & CSTORE & FENQ & OINS --> PG
+    RELAY --> PG
+    RELAY --> NC & NR
+
     NC & NR --> CONS --> SMAIL
-
-    SSTORE & CSTORE --> PG
-    SSVC <--> GH
-    WORK <--> GH
     SMAIL --> SMTP
+    CONS -->|retries exhausted or poison| ND
+    ND --> DLQC
 
     API  -.->|imports| CONTRACT
     NSVC -.->|imports| CONTRACT
