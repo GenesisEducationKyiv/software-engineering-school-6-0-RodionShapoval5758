@@ -8,6 +8,7 @@ import (
 	"net/http"
 	"time"
 
+	"GithubReleaseNotificationAPI/contract"
 	"GithubReleaseNotificationAPI/internal/catalog"
 	"GithubReleaseNotificationAPI/internal/config"
 	"GithubReleaseNotificationAPI/internal/db"
@@ -15,9 +16,9 @@ import (
 	"GithubReleaseNotificationAPI/internal/github"
 	"GithubReleaseNotificationAPI/internal/metrics"
 	"GithubReleaseNotificationAPI/internal/monitoring"
-	"GithubReleaseNotificationAPI/internal/notifier"
 	"GithubReleaseNotificationAPI/internal/outbox"
 	"GithubReleaseNotificationAPI/internal/subscription"
+	"GithubReleaseNotificationAPI/internal/subscription/usecase"
 	"GithubReleaseNotificationAPI/internal/transport/http/handler"
 	httpRouter "GithubReleaseNotificationAPI/internal/transport/http/router"
 
@@ -63,29 +64,46 @@ func Build(cfg *config.Config) (*App, error) {
 		return nil, fmt.Errorf("init jetstream: %w", err)
 	}
 
-	if err := notifier.EnsureStream(initCtx, js); err != nil {
+	if _, err := js.CreateOrUpdateStream(initCtx, jetstream.StreamConfig{
+		Name:       contract.StreamName,
+		Subjects:   []string{contract.SubjectAll},
+		Storage:    jetstream.FileStorage,
+		Retention:  jetstream.WorkQueuePolicy,
+		Duplicates: 2 * time.Minute,
+		MaxAge:     24 * time.Hour,
+		MaxBytes:   512 * 1024 * 1024,
+	}); err != nil {
 		_ = nc.Drain()
 		dbPool.Close()
 		return nil, fmt.Errorf("ensure notification stream: %w", err)
 	}
 
-	outboxRelay := outbox.NewRelay(dbPool, js)
-	outboxStore := &outboxStoreAdapter{}
+	outboxStore := outbox.NewStore()
+	fanoutStore := fanout.NewStore()
+	outboxRelay := outbox.NewRelay(dbPool, js, outboxStore)
 
-	catalogService := catalog.New(dbPool)
 	subRepo := subscription.NewRepository(dbPool)
-	githubClient := github.NewGithubClient(http.DefaultClient, &cfg.GithubToken)
-	subService := subscription.NewService(subRepo, catalogService, githubClient, outboxStore, db.WrapPool(dbPool))
+	githubClient := github.NewGithubClient(&http.Client{Timeout: 15 * time.Second}, &cfg.GithubToken)
+
+	ensureUC := catalog.NewEnsure(dbPool)
+	deleteIfOrphanedUC := catalog.NewDeleteIfOrphaned(dbPool)
+	listTrackedUC := catalog.NewListTracked(dbPool)
+	updateReleaseUC := catalog.NewUpdateLastSeenTagAtomic(dbPool)
+
+	subscribeUC := usecase.NewSubscribe(subRepo, ensureUC, githubClient, outboxStore, db.WrapPool(dbPool))
+	confirmUC := usecase.NewConfirm(subRepo)
+	unsubscribeUC := usecase.NewUnsubscribe(subRepo, deleteIfOrphanedUC)
+	listUC := usecase.NewList(subRepo)
 
 	reg := prometheus.NewRegistry()
 	appMetrics := metrics.New(reg)
 
-	subHandler := handler.New(subService)
+	subHandler := handler.New(subscribeUC, confirmUC, unsubscribeUC, listUC)
 	router := httpRouter.New(subHandler, cfg.ApiKey, appMetrics, &dbPinger{dbPool}, &natsPinger{nc})
 
-	fanoutEnqueuer := &fanoutEnqueuerAdapter{}
-	worker := monitoring.NewWorker(githubClient, catalogService, fanoutEnqueuer, appMetrics)
-	fanoutWorker := fanout.NewWorker(dbPool, &recipientListerAdapter{subService})
+	catalogAdapter := &catalogMonitoringAdapter{lister: listTrackedUC, updater: updateReleaseUC}
+	worker := monitoring.NewWorker(githubClient, catalogAdapter, fanoutStore, appMetrics)
+	fanoutWorker := fanout.NewWorker(dbPool, &recipientListerAdapter{lister: listUC}, outboxStore, fanoutStore)
 
 	return &App{
 		server:     &http.Server{Addr: ":" + cfg.Port, Handler: router},

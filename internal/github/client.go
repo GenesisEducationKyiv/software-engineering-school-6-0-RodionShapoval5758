@@ -4,17 +4,16 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"io"
 	"log/slog"
 	"net/http"
 	"strings"
 	"time"
-
-	"GithubReleaseNotificationAPI/internal/shared"
 )
 
 const (
 	GithubAPI        = "https://api.github.com"
-	githubAPIVersion = "2026-03-10"
+	githubAPIVersion = "2022-11-28"
 	userAgent        = "GithubReleaseNotificationAPI"
 )
 
@@ -40,7 +39,7 @@ func NewGithubClient(cl *http.Client, token *string) *Service {
 }
 
 func (s *Service) CheckRepo(ctx context.Context, fullName string) error {
-	ctx, cancel := context.WithTimeout(ctx, 5*time.Second)
+	ctx, cancel := context.WithTimeout(ctx, 10*time.Second)
 	defer cancel()
 
 	resp, err := s.doGet(ctx, "/repos/"+strings.TrimSpace(fullName))
@@ -48,16 +47,13 @@ func (s *Service) CheckRepo(ctx context.Context, fullName string) error {
 		return err
 	}
 	defer func() {
+		_, _ = io.Copy(io.Discard, resp.Body)
 		if err := resp.Body.Close(); err != nil {
 			slog.Warn("failed to close github repository response body", "repository", fullName, "error", err)
 		}
 	}()
 
-	if err := determineResponse(resp); err != nil {
-		return err
-	}
-
-	return nil
+	return determineResponse(resp)
 }
 
 func (s *Service) GetLatestTag(ctx context.Context, fullName string) (*Release, error) {
@@ -69,6 +65,7 @@ func (s *Service) GetLatestTag(ctx context.Context, fullName string) (*Release, 
 		return nil, err
 	}
 	defer func() {
+		_, _ = io.Copy(io.Discard, resp.Body)
 		if err := resp.Body.Close(); err != nil {
 			slog.Warn("failed to close github latest release response body", "repository", fullName, "error", err)
 		}
@@ -126,7 +123,7 @@ func determineResponse(resp *http.Response) error {
 	case http.StatusOK:
 		return nil
 	case http.StatusNotFound:
-		return shared.ErrNotFound
+		return ErrNotFound
 	case http.StatusUnauthorized:
 		return ErrUnauthorized
 	case http.StatusForbidden, http.StatusTooManyRequests:
