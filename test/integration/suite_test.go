@@ -8,8 +8,11 @@ import (
 	"testing"
 
 	"GithubReleaseNotificationAPI/internal/catalog"
+	"GithubReleaseNotificationAPI/internal/db"
 	"GithubReleaseNotificationAPI/internal/metrics"
+	"GithubReleaseNotificationAPI/internal/outbox"
 	"GithubReleaseNotificationAPI/internal/subscription"
+	"GithubReleaseNotificationAPI/internal/subscription/usecase"
 	"GithubReleaseNotificationAPI/internal/transport/http/handler"
 	httpRouter "GithubReleaseNotificationAPI/internal/transport/http/router"
 
@@ -18,9 +21,9 @@ import (
 	"github.com/stretchr/testify/suite"
 )
 
-type noopNotifier struct{}
+type noopPinger struct{}
 
-func (n *noopNotifier) SendConfirmation(toEmail, repoName, confirmToken string) error { return nil }
+func (noopPinger) Ping(context.Context) error { return nil }
 
 const testAPIKey = "test-integration-key"
 
@@ -32,11 +35,19 @@ type IntegrationSuite struct {
 
 func (s *IntegrationSuite) SetupSuite() {
 	subRepo := subscription.NewRepository(testPool)
-	catalogSvc := catalog.New(testPool)
+	outboxStore := outbox.NewStore()
+	ensureCat := catalog.NewEnsure(testPool)
+	deleteCat := catalog.NewDeleteIfOrphaned(testPool)
 	s.githubFake = &fakeGithubClient{}
-	svc := subscription.NewService(subRepo, catalogSvc, s.githubFake, &noopNotifier{})
-	h := handler.New(svc)
-	s.router = httpRouter.New(h, testAPIKey, metrics.New(prometheus.NewRegistry()))
+
+	sub := usecase.NewSubscribe(subRepo, ensureCat, s.githubFake, outboxStore, db.WrapPool(testPool))
+	conf := usecase.NewConfirm(subRepo)
+	unsub := usecase.NewUnsubscribe(subRepo, deleteCat)
+	list := usecase.NewList(subRepo)
+
+	h := handler.New(sub, conf, unsub, list)
+	m := metrics.New(prometheus.NewRegistry())
+	s.router = httpRouter.New(h, testAPIKey, m, noopPinger{}, noopPinger{})
 }
 
 func (s *IntegrationSuite) SetupTest() {
