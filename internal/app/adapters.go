@@ -4,14 +4,23 @@ import (
 	"context"
 	"errors"
 
+	"GithubReleaseNotificationAPI/internal/catalog"
 	"GithubReleaseNotificationAPI/internal/db"
 	"GithubReleaseNotificationAPI/internal/fanout"
-	"GithubReleaseNotificationAPI/internal/outbox"
+	"GithubReleaseNotificationAPI/internal/monitoring"
 	"GithubReleaseNotificationAPI/internal/subscription"
 
 	"github.com/jackc/pgx/v5/pgxpool"
 	natsgo "github.com/nats-io/nats.go"
 )
+
+type catalogLister interface {
+	ListTracked(ctx context.Context) ([]catalog.Repository, error)
+}
+
+type catalogUpdater interface {
+	UpdateLastSeenTagAtomic(ctx context.Context, repoID int64, tag string, onTx func(context.Context, db.DBTX) error) error
+}
 
 type dbPinger struct{ pool *pgxpool.Pool }
 
@@ -19,7 +28,6 @@ func (d *dbPinger) Ping(ctx context.Context) error {
 	return d.pool.Ping(ctx)
 }
 
-// natsPinger wraps a NATS connection for the health check Pinger interface.
 type natsPinger struct{ nc *natsgo.Conn }
 
 func (n *natsPinger) Ping(_ context.Context) error {
@@ -29,26 +37,43 @@ func (n *natsPinger) Ping(_ context.Context) error {
 	return nil
 }
 
-// outboxStoreAdapter bridges the outbox package free functions to the
-// outboxWriter interface consumed by the subscription service and worker.
-type outboxStoreAdapter struct{}
-
-func (o *outboxStoreAdapter) Insert(ctx context.Context, q db.DBTX, subject string, payload []byte) error {
-	return outbox.Insert(ctx, q, subject, payload)
+type catalogMonitoringAdapter struct {
+	lister  catalogLister
+	updater catalogUpdater
 }
 
-type fanoutEnqueuerAdapter struct{}
+func (a *catalogMonitoringAdapter) ListTracked(ctx context.Context) ([]monitoring.TrackedRepo, error) {
+	repos, err := a.lister.ListTracked(ctx)
+	if err != nil {
+		return nil, err
+	}
 
-func (f *fanoutEnqueuerAdapter) Enqueue(ctx context.Context, q db.DBTX, r fanout.DetectedRelease) error {
-	return fanout.Enqueue(ctx, q, r)
+	result := make([]monitoring.TrackedRepo, len(repos))
+	for i, r := range repos {
+		result[i] = monitoring.TrackedRepo{
+			ID:          r.ID,
+			FullName:    r.FullName,
+			LastSeenTag: r.LastSeenTag,
+		}
+	}
+
+	return result, nil
+}
+
+func (a *catalogMonitoringAdapter) UpdateLastSeenTagAtomic(ctx context.Context, repoID int64, tag string, onTx func(context.Context, db.DBTX) error) error {
+	return a.updater.UpdateLastSeenTagAtomic(ctx, repoID, tag, onTx)
+}
+
+type confirmedLister interface {
+	ConfirmedByRepositoryID(ctx context.Context, repoID int64) ([]subscription.Subscription, error)
 }
 
 type recipientListerAdapter struct {
-	svc *subscription.Service
+	lister confirmedLister
 }
 
 func (a *recipientListerAdapter) ListConfirmed(ctx context.Context, repoID int64) ([]fanout.Recipient, error) {
-	subs, err := a.svc.ListConfirmedByRepositoryID(ctx, repoID)
+	subs, err := a.lister.ConfirmedByRepositoryID(ctx, repoID)
 	if err != nil {
 		return nil, err
 	}
