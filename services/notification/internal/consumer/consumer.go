@@ -164,9 +164,17 @@ func (c *Consumer) toDLQ(ctx context.Context, msg jetstream.Msg, reason string, 
 }
 
 func buildDeadLetter(subject string, data []byte, reason string, attempts uint64) contract.DeadLetter {
+	payload := json.RawMessage(data)
+	if !json.Valid(data) {
+		// data is not JSON (e.g. binary or truly malformed); store as a JSON string so
+		// the DeadLetter envelope can always be marshaled without error.
+		encoded, _ := json.Marshal(string(data))
+		payload = json.RawMessage(encoded)
+	}
+
 	return contract.DeadLetter{
 		OriginalSubject: subject,
-		Payload:         json.RawMessage(data),
+		Payload:         payload,
 		Reason:          reason,
 		Attempts:        attempts,
 		FailedAt:        time.Now().UTC(),
