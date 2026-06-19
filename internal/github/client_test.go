@@ -6,7 +6,7 @@ import (
 	"net/http/httptest"
 	"testing"
 
-	"GithubReleaseNotificationAPI/internal/shared"
+	"GithubReleaseNotificationAPI/internal/db"
 
 	"github.com/stretchr/testify/require"
 )
@@ -29,7 +29,7 @@ func TestCheckRepoNotFound(t *testing.T) {
 	defer closeServer()
 
 	err := client.CheckRepo(context.Background(), "golang/go")
-	require.ErrorIs(t, err, shared.ErrNotFound)
+	require.ErrorIs(t, err, db.ErrNotFound)
 }
 
 func TestCheckRepoRateLimited(t *testing.T) {

@@ -8,7 +8,7 @@ import (
 	"net/http"
 	"strings"
 
-	"GithubReleaseNotificationAPI/internal/shared"
+	"GithubReleaseNotificationAPI/internal/db"
 )
 
 func (s *IntegrationSuite) TestSubscribe_HappyPath() {
@@ -82,7 +82,7 @@ func (s *IntegrationSuite) TestSubscribe_DuplicateSubscription() {
 }
 
 func (s *IntegrationSuite) TestSubscribe_RepoNotFoundOnGitHub() {
-	s.githubFake.err = shared.ErrNotFound
+	s.githubFake.err = db.ErrNotFound
 
 	body := `{"email":"user@example.com","repo":"owner/repo"}`
 	w := s.do(http.MethodPost, "/api/subscribe", strings.NewReader(body))

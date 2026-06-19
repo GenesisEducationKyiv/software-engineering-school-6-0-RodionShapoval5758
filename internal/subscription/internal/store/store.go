@@ -6,7 +6,6 @@ import (
 	"fmt"
 
 	"GithubReleaseNotificationAPI/internal/db"
-	"GithubReleaseNotificationAPI/internal/shared"
 	"GithubReleaseNotificationAPI/internal/subscription/internal/domain"
 
 	"github.com/jackc/pgerrcode"
@@ -35,11 +34,11 @@ func (r *PostgresSubscriptionRepository) Create(ctx context.Context, subscriptio
 		if pgErr, ok := errors.AsType[*pgconn.PgError](err); ok && pgErr.Code == pgerrcode.UniqueViolation {
 			switch pgErr.ConstraintName {
 			case "subscriptions_email_repository_id_key":
-				return shared.ErrAlreadyExists
+				return db.ErrAlreadyExists
 			case "subscriptions_confirmation_token_key":
-				return fmt.Errorf("confirmation token: %w", shared.ErrTokenConflict)
+				return fmt.Errorf("confirmation token: %w", db.ErrTokenConflict)
 			case "subscriptions_unsubscribe_token_key":
-				return fmt.Errorf("unsubscribe token: %w", shared.ErrTokenConflict)
+				return fmt.Errorf("unsubscribe token: %w", db.ErrTokenConflict)
 			default:
 				return fmt.Errorf("unexpected unique violation on subscriptions: %w", err)
 			}
@@ -65,7 +64,7 @@ func (r *PostgresSubscriptionRepository) FindByUnsubscribeToken(ctx context.Cont
 	)
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
-			return nil, shared.ErrNotFound
+			return nil, db.ErrNotFound
 		}
 
 		return nil, fmt.Errorf("find subscription by unsubscribe token: %w", err)
@@ -81,7 +80,7 @@ func (r *PostgresSubscriptionRepository) Confirm(ctx context.Context, token stri
 	}
 
 	if tag.RowsAffected() == 0 {
-		return shared.ErrNotFound
+		return db.ErrNotFound
 	}
 
 	return nil
@@ -94,7 +93,7 @@ func (r *PostgresSubscriptionRepository) DeleteByUnsubscribeToken(ctx context.Co
 	}
 
 	if tag.RowsAffected() == 0 {
-		return shared.ErrNotFound
+		return db.ErrNotFound
 	}
 
 	return nil

@@ -7,7 +7,6 @@ import (
 
 	"GithubReleaseNotificationAPI/internal/catalog/internal/domain"
 	"GithubReleaseNotificationAPI/internal/db"
-	"GithubReleaseNotificationAPI/internal/shared"
 
 	"github.com/jackc/pgerrcode"
 	"github.com/jackc/pgx/v5"
@@ -34,7 +33,7 @@ func (r *PostgresRepoRepository) Create(ctx context.Context, repositoryName stri
 	)
 	if err != nil {
 		if pgerr, ok := errors.AsType[*pgconn.PgError](err); ok && pgerr.Code == pgerrcode.UniqueViolation {
-			return nil, shared.ErrAlreadyExists
+			return nil, db.ErrAlreadyExists
 		}
 
 		return nil, fmt.Errorf("insert repository row with name %s: %w", repositoryName, err)
@@ -55,7 +54,7 @@ func (r *PostgresRepoRepository) FindByFullName(ctx context.Context, fullName st
 	)
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
-			return nil, shared.ErrNotFound
+			return nil, db.ErrNotFound
 		}
 
 		return nil, fmt.Errorf("scan repositories row by name %s: %w", fullName, err)
@@ -71,7 +70,7 @@ func (r *PostgresRepoRepository) UpdateLastSeenTag(ctx context.Context, reposito
 	}
 
 	if tag.RowsAffected() == 0 {
-		return shared.ErrNotFound
+		return db.ErrNotFound
 	}
 
 	return nil
@@ -84,7 +83,7 @@ func (r *PostgresRepoRepository) DeleteByID(ctx context.Context, repositoryID in
 	}
 
 	if tag.RowsAffected() == 0 {
-		return shared.ErrNotFound
+		return db.ErrNotFound
 	}
 
 	return nil
