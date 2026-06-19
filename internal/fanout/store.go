@@ -23,11 +23,14 @@ type Recipient struct {
 	UnsubscribeToken string
 }
 
-func Enqueue(ctx context.Context, q db.DBTX, r DetectedRelease) error {
-	_, err := q.Exec(ctx, `
-		INSERT INTO detected_releases (repo_id, repo_name, release_tag, release_name, release_url)
-		VALUES ($1, $2, $3, $4, $5)
-	`, r.RepoID, r.RepoName, r.ReleaseTag, r.ReleaseName, r.ReleaseURL)
+type Store struct{}
+
+func NewStore() *Store {
+	return &Store{}
+}
+
+func (s *Store) Enqueue(ctx context.Context, q db.DBTX, r DetectedRelease) error {
+	_, err := q.Exec(ctx, enqueueDetectedReleaseQuery, r.RepoID, r.RepoName, r.ReleaseTag, r.ReleaseName, r.ReleaseURL)
 	if err != nil {
 		return fmt.Errorf("enqueue detected release: %w", err)
 	}
@@ -35,15 +38,8 @@ func Enqueue(ctx context.Context, q db.DBTX, r DetectedRelease) error {
 	return nil
 }
 
-func FetchForUpdate(ctx context.Context, tx pgx.Tx, limit int) ([]DetectedRelease, error) {
-	rows, err := tx.Query(ctx, `
-		SELECT id, repo_id, repo_name, release_tag, release_name, release_url
-		FROM detected_releases
-		WHERE processed_at IS NULL
-		ORDER BY id
-		LIMIT $1
-		FOR UPDATE SKIP LOCKED
-	`, limit)
+func (s *Store) FetchForUpdate(ctx context.Context, tx pgx.Tx, limit int) ([]DetectedRelease, error) {
+	rows, err := tx.Query(ctx, fetchDetectedReleasesForUpdateQuery, limit)
 	if err != nil {
 		return nil, fmt.Errorf("fetch pending detected releases: %w", err)
 	}
@@ -63,10 +59,8 @@ func FetchForUpdate(ctx context.Context, tx pgx.Tx, limit int) ([]DetectedReleas
 	return result, rows.Err()
 }
 
-func MarkProcessed(ctx context.Context, tx pgx.Tx, ids []int64) error {
-	_, err := tx.Exec(ctx, `
-		UPDATE detected_releases SET processed_at = now() WHERE id = ANY($1)
-	`, ids)
+func (s *Store) MarkProcessed(ctx context.Context, tx pgx.Tx, ids []int64) error {
+	_, err := tx.Exec(ctx, markDetectedReleasesProcessedQuery, ids)
 	if err != nil {
 		return fmt.Errorf("mark detected releases processed: %w", err)
 	}

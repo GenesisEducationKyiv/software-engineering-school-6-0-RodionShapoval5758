@@ -8,7 +8,7 @@ import (
 	"time"
 
 	"GithubReleaseNotificationAPI/contract"
-	"GithubReleaseNotificationAPI/internal/outbox"
+	"GithubReleaseNotificationAPI/internal/db"
 
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
@@ -23,13 +23,19 @@ type recipientLister interface {
 	ListConfirmed(ctx context.Context, repoID int64) ([]Recipient, error)
 }
 
+type outboxWriter interface {
+	Insert(ctx context.Context, q db.DBTX, subject string, payload []byte) error
+}
+
 type Worker struct {
 	pool       *pgxpool.Pool
 	recipients recipientLister
+	outbox     outboxWriter
+	store      *Store
 }
 
-func NewWorker(pool *pgxpool.Pool, recipients recipientLister) *Worker {
-	return &Worker{pool: pool, recipients: recipients}
+func NewWorker(pool *pgxpool.Pool, recipients recipientLister, outbox outboxWriter, store *Store) *Worker {
+	return &Worker{pool: pool, recipients: recipients, outbox: outbox, store: store}
 }
 
 func (w *Worker) Run(ctx context.Context) {
@@ -57,7 +63,7 @@ func (w *Worker) processPending(ctx context.Context) error {
 	}
 	defer func() { _ = tx.Rollback(ctx) }()
 
-	releases, err := FetchForUpdate(ctx, tx, batchSize)
+	releases, err := w.store.FetchForUpdate(ctx, tx, batchSize)
 	if err != nil {
 		return err
 	}
@@ -87,7 +93,7 @@ func (w *Worker) processPending(ctx context.Context) error {
 		}
 
 		for _, payload := range payloads {
-			if err := outbox.Insert(ctx, tx, contract.SubjectRelease, payload); err != nil {
+			if err := w.outbox.Insert(ctx, tx, contract.SubjectRelease, payload); err != nil {
 				slog.Error("fanout: insert outbox", "repo_id", r.RepoID, "error", err)
 				return err
 			}
@@ -100,7 +106,7 @@ func (w *Worker) processPending(ctx context.Context) error {
 		return nil
 	}
 
-	if err := MarkProcessed(ctx, tx, processed); err != nil {
+	if err := w.store.MarkProcessed(ctx, tx, processed); err != nil {
 		return err
 	}
 

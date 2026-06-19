@@ -17,12 +17,13 @@ const (
 )
 
 type Relay struct {
-	pool *pgxpool.Pool
-	js   jetstream.JetStream
+	pool  *pgxpool.Pool
+	js    jetstream.JetStream
+	store *Store
 }
 
-func NewRelay(pool *pgxpool.Pool, js jetstream.JetStream) *Relay {
-	return &Relay{pool: pool, js: js}
+func NewRelay(pool *pgxpool.Pool, js jetstream.JetStream, store *Store) *Relay {
+	return &Relay{pool: pool, js: js, store: store}
 }
 
 func (r *Relay) Run(ctx context.Context) {
@@ -48,7 +49,7 @@ func (r *Relay) publishPending(ctx context.Context) error {
 	}
 	defer func() { _ = tx.Rollback(ctx) }()
 
-	rows, err := FetchForUpdate(ctx, tx, batchSize)
+	rows, err := r.store.FetchForUpdate(ctx, tx, batchSize)
 	if err != nil {
 		return err
 	}
@@ -74,7 +75,7 @@ func (r *Relay) publishPending(ctx context.Context) error {
 		return nil
 	}
 
-	if err := MarkPublished(ctx, tx, published); err != nil {
+	if err := r.store.MarkPublished(ctx, tx, published); err != nil {
 		return err
 	}
 

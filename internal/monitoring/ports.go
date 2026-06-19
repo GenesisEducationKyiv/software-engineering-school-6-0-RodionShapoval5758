@@ -3,15 +3,13 @@ package monitoring
 import (
 	"context"
 
-	"GithubReleaseNotificationAPI/internal/catalog"
 	"GithubReleaseNotificationAPI/internal/db"
 	"GithubReleaseNotificationAPI/internal/fanout"
 	"GithubReleaseNotificationAPI/internal/github"
 )
 
 type catalogClient interface {
-	ListTracked(ctx context.Context) ([]catalog.Repository, error)
-	UpdateLastSeenTag(ctx context.Context, repositoryID int64, tag string) error
+	ListTracked(ctx context.Context) ([]TrackedRepo, error)
 	UpdateLastSeenTagAtomic(ctx context.Context, repoID int64, tag string, onTx func(context.Context, db.DBTX) error) error
 }
 

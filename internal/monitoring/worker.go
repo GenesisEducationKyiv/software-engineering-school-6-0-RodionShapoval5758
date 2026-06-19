@@ -8,12 +8,10 @@ import (
 	"sync/atomic"
 	"time"
 
-	"GithubReleaseNotificationAPI/internal/catalog"
 	"GithubReleaseNotificationAPI/internal/db"
 	"GithubReleaseNotificationAPI/internal/fanout"
 	"GithubReleaseNotificationAPI/internal/github"
 	"GithubReleaseNotificationAPI/internal/idgen"
-	"GithubReleaseNotificationAPI/internal/shared"
 )
 
 type Worker struct {
@@ -114,7 +112,7 @@ func (w *Worker) processRepositories(
 	scanCtx context.Context,
 	cancelScan context.CancelFunc,
 	rateLimited *atomic.Bool,
-	repositories []catalog.Repository,
+	repositories []TrackedRepo,
 	logger *slog.Logger,
 ) {
 	sem := make(chan struct{}, maxConcurrentRepositoryScans)
@@ -128,7 +126,7 @@ func (w *Worker) processRepositories(
 		wg.Add(1)
 		sem <- struct{}{}
 
-		go func(r catalog.Repository) {
+		go func(r TrackedRepo) {
 			defer wg.Done()
 			defer func() { <-sem }()
 
@@ -143,7 +141,7 @@ func (w *Worker) processRepositories(
 
 func (w *Worker) handleRepositoryProcessingError(
 	err error,
-	repo catalog.Repository,
+	repo TrackedRepo,
 	cancelScan context.CancelFunc,
 	rateLimited *atomic.Bool,
 	logger *slog.Logger,
@@ -162,7 +160,7 @@ func (w *Worker) handleRepositoryProcessingError(
 	)
 }
 
-func (w *Worker) processRepository(ctx context.Context, repo catalog.Repository, logger *slog.Logger) error {
+func (w *Worker) processRepository(ctx context.Context, repo TrackedRepo, logger *slog.Logger) error {
 	if logger == nil {
 		logger = slog.Default()
 	}
@@ -209,10 +207,10 @@ func (w *Worker) processRepository(ctx context.Context, repo catalog.Repository,
 	})
 }
 
-func (w *Worker) getLatestRelease(ctx context.Context, repo catalog.Repository, logger *slog.Logger) (*github.Release, error) {
+func (w *Worker) getLatestRelease(ctx context.Context, repo TrackedRepo, logger *slog.Logger) (*github.Release, error) {
 	release, err := w.githubClient.GetLatestTag(ctx, repo.FullName)
 	if err != nil {
-		if errors.Is(err, shared.ErrNotFound) {
+		if errors.Is(err, db.ErrNotFound) {
 			logger.Info(
 				"worker skipped repository without latest release",
 				"repository_id", repo.ID,
