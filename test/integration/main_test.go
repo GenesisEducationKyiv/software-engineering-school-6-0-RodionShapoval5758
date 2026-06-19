@@ -45,6 +45,14 @@ func run(m *testing.M) int {
 	testPool = pool
 	defer testPool.Close()
 
+	natsURL, natsCleanup := resolveNATS(ctx)
+	defer natsCleanup()
+
+	testNC, testJS = connectNATS(natsURL)
+	defer func() { _ = testNC.Drain() }()
+
+	ensureNotificationStream(ctx, testJS)
+
 	return m.Run()
 }
 
