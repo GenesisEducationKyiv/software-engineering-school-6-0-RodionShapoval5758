@@ -19,4 +19,5 @@ COPY --from=builder /app/migrations ./migrations
 
 USER app
 EXPOSE 8080
+HEALTHCHECK --interval=30s --timeout=5s --retries=3 CMD ["./healthcheck"]
 CMD ["./api"]
