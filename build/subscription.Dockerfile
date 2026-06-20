@@ -1,14 +1,18 @@
 FROM golang:1.26 AS builder
 WORKDIR /app
-COPY go.work go.work.sum ./
-COPY go.mod go.sum ./
+
 COPY services/contract/go.mod services/contract/go.sum ./services/contract/
+RUN cd services/contract && GOWORK=off go mod download
+
+COPY go.mod go.sum ./
+RUN GOWORK=off go mod download
+
 COPY services/subscription/go.mod services/subscription/go.sum ./services/subscription/
-RUN go work download
+RUN cd services/subscription && GOWORK=off go mod download
 
 COPY . .
-RUN CGO_ENABLED=0 GOOS=linux go build -o subscription ./services/subscription/cmd/subscription && \
-    CGO_ENABLED=0 GOOS=linux go build -o healthcheck ./cmd/healthcheck
+RUN GOWORK=off CGO_ENABLED=0 GOOS=linux go build -o healthcheck ./cmd/healthcheck && \
+    GOWORK=off CGO_ENABLED=0 GOOS=linux go build -C ./services/subscription -o /app/subscription ./cmd/subscription
 
 FROM debian:bookworm-slim
 WORKDIR /app
