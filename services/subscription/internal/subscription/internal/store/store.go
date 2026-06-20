@@ -79,6 +79,7 @@ func (r *PostgresSubscriptionRepository) Confirm(ctx context.Context, token stri
 		}
 		return 0, fmt.Errorf("confirm subscription by token: %w", err)
 	}
+
 	return id, nil
 }
 

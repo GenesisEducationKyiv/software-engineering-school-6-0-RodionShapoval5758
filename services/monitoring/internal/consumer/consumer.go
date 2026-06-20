@@ -65,6 +65,7 @@ func (c *Consumer) Start(ctx context.Context) error {
 	defer cc.Stop()
 
 	<-ctx.Done()
+
 	return nil
 }
 
@@ -76,6 +77,7 @@ func (c *Consumer) handle(ctx context.Context, msg jetstream.Msg) error {
 			slog.Error("unmarshal RepoTracked", "error", err)
 			return nil
 		}
+
 		return c.cursors.Upsert(ctx, c.pool, ev.RepoID, ev.FullName)
 
 	case contract.SubjectRepoUntracked:
@@ -84,6 +86,7 @@ func (c *Consumer) handle(ctx context.Context, msg jetstream.Msg) error {
 			slog.Error("unmarshal RepoUntracked", "error", err)
 			return nil
 		}
+
 		return c.cursors.Delete(ctx, c.pool, ev.RepoID)
 
 	default:

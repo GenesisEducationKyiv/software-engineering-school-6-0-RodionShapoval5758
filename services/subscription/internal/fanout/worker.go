@@ -70,6 +70,7 @@ func (w *Worker) Run(ctx context.Context) error {
 	defer cc.Stop()
 
 	<-ctx.Done()
+
 	return nil
 }
 

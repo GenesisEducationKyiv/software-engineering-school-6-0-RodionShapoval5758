@@ -49,6 +49,7 @@ func (c *Consumer) Start(ctx context.Context) error {
 	defer cc.Stop()
 
 	<-ctx.Done()
+
 	return nil
 }
 
@@ -60,6 +61,7 @@ func (c *Consumer) handle(ctx context.Context, msg jetstream.Msg) error {
 			slog.Error("saga: unmarshal EmailSent", "error", err)
 			return nil
 		}
+
 		return c.orchestrator.HandleEmailSent(ctx, ev.SagaID)
 
 	case contract.SubjectEmailFailed:
@@ -68,6 +70,7 @@ func (c *Consumer) handle(ctx context.Context, msg jetstream.Msg) error {
 			slog.Error("saga: unmarshal EmailFailed", "error", err)
 			return nil
 		}
+
 		return c.orchestrator.HandleEmailFailed(ctx, ev.SagaID, ev.Reason)
 
 	default:

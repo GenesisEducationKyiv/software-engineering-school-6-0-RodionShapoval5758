@@ -106,6 +106,7 @@ func (o *Orchestrator) compensate(ctx context.Context, row Row, reason string) e
 		if err := o.store.UpdateState(ctx, tx, row.ID, StateCompleted, nil); err != nil {
 			return fmt.Errorf("mark saga %s COMPLETED: %w", row.SagaID, err)
 		}
+
 		return tx.Commit(ctx)
 	}
 
@@ -126,6 +127,7 @@ func (o *Orchestrator) compensate(ctx context.Context, row Row, reason string) e
 	}
 
 	slog.Info("saga compensated", "saga_id", row.SagaID, "reason", reason)
+
 	return nil
 }
 

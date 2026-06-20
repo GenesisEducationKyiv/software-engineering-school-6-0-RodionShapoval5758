@@ -59,6 +59,7 @@ func (s *OutboxStore) FetchForUpdate(ctx context.Context, tx pgx.Tx, limit int) 
 		}
 		result = append(result, r)
 	}
+
 	return result, rows.Err()
 }
 

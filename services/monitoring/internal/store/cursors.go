@@ -52,6 +52,7 @@ func (s *CursorStore) ListTracked(ctx context.Context) ([]monitoring.TrackedRepo
 		}
 		result = append(result, r)
 	}
+
 	return result, rows.Err()
 }
 

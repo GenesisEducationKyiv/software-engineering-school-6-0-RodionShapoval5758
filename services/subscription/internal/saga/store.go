@@ -51,6 +51,7 @@ func (s *Store) InsertInTx(ctx context.Context, q db.DBTX, r Row) error {
 	if err != nil {
 		return fmt.Errorf("insert saga: %w", err)
 	}
+
 	return nil
 }
 
@@ -69,6 +70,7 @@ func (s *Store) FindBySagaIDForUpdate(ctx context.Context, q db.DBTX, sagaID str
 		}
 		return nil, fmt.Errorf("find saga %s: %w", sagaID, err)
 	}
+
 	return r, nil
 }
 
@@ -96,6 +98,7 @@ func (s *Store) FindExpiredForUpdate(ctx context.Context, q db.DBTX, limit int) 
 		}
 		result = append(result, *r)
 	}
+
 	return result, rows.Err()
 }
 
@@ -139,6 +142,7 @@ func (s *Store) FindSubscriptionIDByToken(ctx context.Context, q db.DBTX, token 
 		}
 		return 0, fmt.Errorf("find subscription by token: %w", err)
 	}
+
 	return id, nil
 }
 
@@ -156,6 +160,7 @@ func (s *Store) ConfirmSubscription(ctx context.Context, q db.DBTX, subscription
 	if tag.RowsAffected() == 0 {
 		return db.ErrNotFound
 	}
+
 	return nil
 }
 
@@ -174,6 +179,7 @@ func (s *Store) FindBySubscriptionIDForUpdate(ctx context.Context, q db.DBTX, su
 		}
 		return nil, fmt.Errorf("find saga by subscription_id %d: %w", subscriptionID, err)
 	}
+
 	return r, nil
 }
 
@@ -192,5 +198,6 @@ func scanRow(row pgx.Row) (*Row, error) {
 	if err != nil {
 		return nil, err
 	}
+
 	return &r, nil
 }
