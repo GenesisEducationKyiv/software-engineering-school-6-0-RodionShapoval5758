@@ -16,6 +16,7 @@ import (
 	"GithubReleaseNotificationAPI/services/subscription/internal/github"
 	"GithubReleaseNotificationAPI/services/subscription/internal/metrics"
 	"GithubReleaseNotificationAPI/services/subscription/internal/outbox"
+	"GithubReleaseNotificationAPI/services/subscription/internal/saga"
 	"GithubReleaseNotificationAPI/services/subscription/internal/subscription"
 	"GithubReleaseNotificationAPI/services/subscription/internal/subscription/usecase"
 	"GithubReleaseNotificationAPI/services/subscription/internal/transport/http/handler"
@@ -31,6 +32,8 @@ type App struct {
 	server     *http.Server
 	relay      *outbox.Relay
 	fanout     *fanout.Worker
+	sagaCons   *saga.Consumer
+	sagaReaper *saga.Reaper
 	appMetrics *metrics.Metrics
 	dbPool     *pgxpool.Pool
 	nc         *natsgo.Conn
@@ -88,6 +91,18 @@ func Build(cfg *config.Config) (*App, error) {
 		return nil, fmt.Errorf("ensure tracking stream: %w", err)
 	}
 
+	if _, err := js.CreateOrUpdateStream(initCtx, jetstream.StreamConfig{
+		Name:       contract.StreamSaga,
+		Subjects:   []string{contract.SubjectSagaAll},
+		Storage:    jetstream.FileStorage,
+		Duplicates: 2 * time.Minute,
+		MaxAge:     7 * 24 * time.Hour,
+	}); err != nil {
+		_ = nc.Drain()
+		dbPool.Close()
+		return nil, fmt.Errorf("ensure saga stream: %w", err)
+	}
+
 	outboxStore := outbox.NewStore()
 	outboxRelay := outbox.NewRelay(dbPool, js, outboxStore)
 
@@ -97,8 +112,11 @@ func Build(cfg *config.Config) (*App, error) {
 	ensureUC := catalog.NewEnsure(dbPool)
 	deleteIfOrphanedUC := catalog.NewDeleteIfOrphaned(dbPool, outboxStore)
 
-	subscribeUC := usecase.NewSubscribe(subRepo, ensureUC, githubClient, outboxStore, db.WrapPool(dbPool))
-	confirmUC := usecase.NewConfirm(subRepo)
+	sagaStore := saga.NewStore()
+	sagaOrchestrator := saga.NewOrchestrator(sagaStore, db.WrapPool(dbPool), deleteIfOrphanedUC, subRepo)
+
+	subscribeUC := usecase.NewSubscribe(subRepo, ensureUC, githubClient, outboxStore, sagaStore, db.WrapPool(dbPool), cfg.SagaConfirmTTL)
+	confirmUC := usecase.NewConfirm(subRepo, sagaOrchestrator)
 	unsubscribeUC := usecase.NewUnsubscribe(subRepo, deleteIfOrphanedUC)
 	listUC := usecase.NewList(subRepo)
 
@@ -109,11 +127,15 @@ func Build(cfg *config.Config) (*App, error) {
 	router := httpRouter.New(subHandler, cfg.ApiKey, appMetrics, &dbPinger{dbPool}, &natsPinger{nc})
 
 	fanoutWorker := fanout.NewWorker(js, dbPool, &recipientListerAdapter{lister: listUC}, outboxStore)
+	sagaConsumer := saga.NewConsumer(js, sagaOrchestrator)
+	sagaReaper := saga.NewReaper(dbPool, sagaStore, sagaOrchestrator)
 
 	return &App{
 		server:     &http.Server{Addr: ":" + cfg.Port, Handler: router},
 		relay:      outboxRelay,
 		fanout:     fanoutWorker,
+		sagaCons:   sagaConsumer,
+		sagaReaper: sagaReaper,
 		appMetrics: appMetrics,
 		dbPool:     dbPool,
 		nc:         nc,
@@ -140,6 +162,12 @@ func (a *App) Serve(ctx context.Context) error {
 			slog.Error("fanout consumer error", "error", err)
 		}
 	}()
+	go func() {
+		if err := a.sagaCons.Start(ctx); err != nil && ctx.Err() == nil {
+			slog.Error("saga consumer error", "error", err)
+		}
+	}()
+	go a.sagaReaper.Run(ctx)
 
 	select {
 	case <-ctx.Done():
