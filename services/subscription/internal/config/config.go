@@ -4,6 +4,7 @@ import (
 	"errors"
 	"os"
 	"strconv"
+	"time"
 
 	"github.com/joho/godotenv"
 )
@@ -15,11 +16,12 @@ var (
 )
 
 type Config struct {
-	DatabaseURL string
-	Port        string
-	GithubToken string
-	NATSUrl     string
-	ApiKey      string
+	DatabaseURL    string
+	Port           string
+	GithubToken    string
+	NATSUrl        string
+	ApiKey         string
+	SagaConfirmTTL time.Duration
 }
 
 func Load() (*Config, error) {
@@ -35,12 +37,20 @@ func Load() (*Config, error) {
 }
 
 func loadFromEnv() *Config {
+	ttl := 24 * time.Hour
+	if raw := os.Getenv("SAGA_CONFIRM_TTL"); raw != "" {
+		if parsed, err := time.ParseDuration(raw); err == nil {
+			ttl = parsed
+		}
+	}
+
 	return &Config{
-		DatabaseURL: os.Getenv("DATABASE_URL"),
-		Port:        os.Getenv("PORT"),
-		GithubToken: os.Getenv("GITHUB_TOKEN"),
-		NATSUrl:     os.Getenv("NATS_URL"),
-		ApiKey:      os.Getenv("API_KEY"),
+		DatabaseURL:    os.Getenv("DATABASE_URL"),
+		Port:           os.Getenv("PORT"),
+		GithubToken:    os.Getenv("GITHUB_TOKEN"),
+		NATSUrl:        os.Getenv("NATS_URL"),
+		ApiKey:         os.Getenv("API_KEY"),
+		SagaConfirmTTL: ttl,
 	}
 }
 
