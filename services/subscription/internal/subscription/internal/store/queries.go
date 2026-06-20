@@ -8,6 +8,7 @@ const createSubscriptionQuery = `
 		unsubscribe_token
 	)
 	VALUES ($1, $2, $3, $4)
+	RETURNING id
 `
 
 const findSubscriptionByUnsubscribeTokenQuery = `
@@ -20,6 +21,7 @@ const confirmSubscriptionByTokenQuery = `
 	UPDATE subscriptions
 	SET confirmed = TRUE, confirmed_at = NOW()
 	WHERE confirmation_token = $1
+	RETURNING id
 `
 
 const deleteSubscriptionByUnsubscribeTokenQuery = `

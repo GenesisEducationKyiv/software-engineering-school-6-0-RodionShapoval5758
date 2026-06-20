@@ -21,40 +21,37 @@ func New(d db.DBTX) *PostgresSubscriptionRepository {
 	return &PostgresSubscriptionRepository{db: d}
 }
 
-func (r *PostgresSubscriptionRepository) Create(ctx context.Context, subscription domain.Subscription) error {
-	tag, err := r.db.Exec(
+func (r *PostgresSubscriptionRepository) Create(ctx context.Context, subscription domain.Subscription) (int64, error) {
+	var id int64
+	err := r.db.QueryRow(
 		ctx,
 		createSubscriptionQuery,
 		subscription.Email,
 		subscription.RepositoryID,
 		subscription.ConfirmToken,
 		subscription.UnsubscribeToken,
-	)
+	).Scan(&id)
 	if err != nil {
 		if pgErr, ok := errors.AsType[*pgconn.PgError](err); ok && pgErr.Code == pgerrcode.UniqueViolation {
 			switch pgErr.ConstraintName {
 			case "subscriptions_email_repository_id_key":
-				return db.ErrAlreadyExists
+				return 0, db.ErrAlreadyExists
 			case "subscriptions_confirmation_token_key":
-				return fmt.Errorf("confirmation token: %w", db.ErrTokenConflict)
+				return 0, fmt.Errorf("confirmation token: %w", db.ErrTokenConflict)
 			case "subscriptions_unsubscribe_token_key":
-				return fmt.Errorf("unsubscribe token: %w", db.ErrTokenConflict)
+				return 0, fmt.Errorf("unsubscribe token: %w", db.ErrTokenConflict)
 			default:
-				return fmt.Errorf("unexpected unique violation on subscriptions: %w", err)
+				return 0, fmt.Errorf("unexpected unique violation on subscriptions: %w", err)
 			}
 		}
 
-		return fmt.Errorf("insert subscription for repository_id %d: %w", subscription.RepositoryID, err)
+		return 0, fmt.Errorf("insert subscription for repository_id %d: %w", subscription.RepositoryID, err)
 	}
 
-	if rowsAffected := tag.RowsAffected(); rowsAffected != 1 {
-		return fmt.Errorf("insert subscription row: expected 1 affected row, got %d", rowsAffected)
-	}
-
-	return nil
+	return id, nil
 }
 
-func (r *PostgresSubscriptionRepository) CreateInTx(ctx context.Context, q db.DBTX, sub domain.Subscription) error {
+func (r *PostgresSubscriptionRepository) CreateInTx(ctx context.Context, q db.DBTX, sub domain.Subscription) (int64, error) {
 	return New(q).Create(ctx, sub)
 }
 
@@ -73,17 +70,16 @@ func (r *PostgresSubscriptionRepository) FindByUnsubscribeToken(ctx context.Cont
 	return subscription, nil
 }
 
-func (r *PostgresSubscriptionRepository) Confirm(ctx context.Context, token string) error {
-	tag, err := r.db.Exec(ctx, confirmSubscriptionByTokenQuery, token)
+func (r *PostgresSubscriptionRepository) Confirm(ctx context.Context, token string) (int64, error) {
+	var id int64
+	err := r.db.QueryRow(ctx, confirmSubscriptionByTokenQuery, token).Scan(&id)
 	if err != nil {
-		return fmt.Errorf("confirm subscription by token: %w", err)
+		if errors.Is(err, pgx.ErrNoRows) {
+			return 0, db.ErrNotFound
+		}
+		return 0, fmt.Errorf("confirm subscription by token: %w", err)
 	}
-
-	if tag.RowsAffected() == 0 {
-		return db.ErrNotFound
-	}
-
-	return nil
+	return id, nil
 }
 
 func (r *PostgresSubscriptionRepository) DeleteByUnsubscribeToken(ctx context.Context, token string) error {
