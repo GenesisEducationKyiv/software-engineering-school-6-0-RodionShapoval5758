@@ -7,17 +7,23 @@ import (
 	"net/http"
 	"testing"
 
-	httpHandler "GithubReleaseNotificationAPI/internal/http/handler"
-	httpRouter "GithubReleaseNotificationAPI/internal/http/router"
-	"GithubReleaseNotificationAPI/internal/mail"
+	"GithubReleaseNotificationAPI/internal/catalog"
+	"GithubReleaseNotificationAPI/internal/db"
 	"GithubReleaseNotificationAPI/internal/metrics"
-	"GithubReleaseNotificationAPI/internal/service"
-	"GithubReleaseNotificationAPI/internal/store"
+	"GithubReleaseNotificationAPI/internal/outbox"
+	"GithubReleaseNotificationAPI/internal/subscription"
+	"GithubReleaseNotificationAPI/internal/subscription/usecase"
+	"GithubReleaseNotificationAPI/internal/transport/http/handler"
+	httpRouter "GithubReleaseNotificationAPI/internal/transport/http/router"
 
 	"github.com/prometheus/client_golang/prometheus"
 
 	"github.com/stretchr/testify/suite"
 )
+
+type noopPinger struct{}
+
+func (noopPinger) Ping(context.Context) error { return nil }
 
 const testAPIKey = "test-integration-key"
 
@@ -28,19 +34,25 @@ type IntegrationSuite struct {
 }
 
 func (s *IntegrationSuite) SetupSuite() {
-	subRepo := store.NewSubscriptionRepository(testPool)
-	repoRepo := store.NewRepoRepository(testPool)
-	smtpClient := mail.NewSMTPService(smtpHost, smtpPort, "", "", "noreply@localhost", "http://localhost:8080")
+	subRepo := subscription.NewRepository(testPool)
+	outboxStore := outbox.NewStore()
+	ensureCat := catalog.NewEnsure(testPool)
+	deleteCat := catalog.NewDeleteIfOrphaned(testPool)
 	s.githubFake = &fakeGithubClient{}
-	svc := service.NewSubscriptionService(subRepo, repoRepo, s.githubFake, smtpClient)
-	h := httpHandler.New(svc)
-	s.router = httpRouter.New(h, testAPIKey, metrics.New(prometheus.NewRegistry()))
+
+	sub := usecase.NewSubscribe(subRepo, ensureCat, s.githubFake, outboxStore, db.WrapPool(testPool))
+	conf := usecase.NewConfirm(subRepo)
+	unsub := usecase.NewUnsubscribe(subRepo, deleteCat)
+	list := usecase.NewList(subRepo)
+
+	h := handler.New(sub, conf, unsub, list)
+	m := metrics.New(prometheus.NewRegistry())
+	s.router = httpRouter.New(h, testAPIKey, m, noopPinger{}, noopPinger{})
 }
 
 func (s *IntegrationSuite) SetupTest() {
 	_, err := testPool.Exec(context.Background(), "TRUNCATE subscriptions, repositories CASCADE")
 	s.Require().NoError(err)
-	clearMailpit()
 	s.githubFake.err = nil
 }
 

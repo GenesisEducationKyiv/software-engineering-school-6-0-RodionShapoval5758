@@ -11,39 +11,47 @@ tags:
 schemes:
   - "http"
   - "https"
+securityDefinitions:
+  BearerAuth:
+    type: "apiKey"
+    in: "header"
+    name: "Authorization"
+    description: "Bearer token. Example: 'Bearer <api-key>'"
 paths:
   /subscribe:
     post:
       tags:
         - "subscription"
       summary: "Subscribe to release notifications"
-      description: "Subscribe an email to receive notifications about new releases of a GitHub repository. The repository is validated via GitHub API."
+      description: "Subscribe an email to receive notifications about new releases of a GitHub repository. The repository is validated via GitHub API. Also accepts application/x-www-form-urlencoded with the same fields."
       operationId: "subscribe"
+      security:
+        - BearerAuth: []
       consumes:
         - "application/json"
-        - "application/x-www-form-urlencoded"
       produces:
         - "application/json"
       parameters:
-        - name: "email"
-          in: "formData"
-          description: "Email address to subscribe"
+        - in: "body"
+          name: "body"
           required: true
-          type: "string"
-        - name: "repo"
-          in: "formData"
-          description: "GitHub repository in owner/repo format (e.g., golang/go)"
-          required: true
-          type: "string"
+          schema:
+            $ref: "#/definitions/SubscribeRequest"
       responses:
         "200":
           description: "Subscription successful. Confirmation email sent."
         "400":
-          description: "Invalid input (e.g., invalid repo format)"
+          description: "Invalid input (e.g., invalid email or repo format)"
+        "401":
+          description: "Missing or invalid API key"
         "404":
           description: "Repository not found on GitHub"
         "409":
           description: "Email already subscribed to this repository"
+        "429":
+          description: "GitHub API rate limit reached"
+        "502":
+          description: "GitHub API token is invalid or expired"
   /confirm/{token}:
     get:
       tags:
@@ -95,6 +103,8 @@ paths:
       summary: "Get subscriptions for an email"
       description: "Returns all active subscriptions for the given email address."
       operationId: "getSubscriptions"
+      security:
+        - BearerAuth: []
       parameters:
         - name: "email"
           in: "query"
@@ -112,7 +122,39 @@ paths:
               $ref: "#/definitions/Subscription"
         "400":
           description: "Invalid email"
+        "401":
+          description: "Missing or invalid API key"
+  /validate:
+    get:
+      tags:
+        - "subscription"
+      summary: "Validate API key"
+      description: "Returns 200 if the provided API key is valid. Useful for health-checking auth from clients."
+      operationId: "validateAPIKey"
+      security:
+        - BearerAuth: []
+      produces:
+        - "application/json"
+      responses:
+        "200":
+          description: "API key is valid"
+        "401":
+          description: "Missing or invalid API key"
 definitions:
+  SubscribeRequest:
+    type: "object"
+    required:
+      - "email"
+      - "repo"
+    properties:
+      email:
+        type: "string"
+        description: "Email address to subscribe"
+        example: "user@example.com"
+      repo:
+        type: "string"
+        description: "GitHub repository in owner/repo format"
+        example: "golang/go"
   Subscription:
     type: "object"
     required:
@@ -131,4 +173,3 @@ definitions:
       last_seen_tag:
         type: "string"
         description: "Last seen release tag for this repository"
-

@@ -14,7 +14,7 @@ brew install k6            # macOS
 sudo apt install k6        # Debian/Ubuntu
 # or: https://k6.io/docs/get-started/installation/
 
-# Stack must be running with Prometheus remote-write enabled (already in docker-compose.yml).
+# Stack must be running with Prometheus remote-write enabled (already in docker-compose.yaml).
 make up
 ```
 
@@ -148,7 +148,7 @@ make k6-clean
 ```
 
 ### Prometheus remote-write receiver
-The `--web.enable-remote-write-receiver` flag is already in `docker-compose.yml`. If k6 shows
+The `--web.enable-remote-write-receiver` flag is already in `docker-compose.yaml`. If k6 shows
 `ERRO[...] remote write error`, verify Prometheus is running and reachable:
 ```bash
 curl -s localhost:9090/-/ready

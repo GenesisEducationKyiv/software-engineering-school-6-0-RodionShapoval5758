@@ -14,7 +14,7 @@
 //   is the ceiling. Cross-reference the Grafana dashboards to attribute the root cause:
 //
 //   db_pool_empty_acquire_total spiking  →  DB connection pool is the bottleneck
-//     Fix: add ?pool_max_conns=50 to DATABASE_URL in docker-compose.yml
+//     Fix: add ?pool_max_conns=50 to DATABASE_URL in docker-compose.yaml
 //
 //   502s / connection refused, pool looks idle  →  nginx connection churn
 //     Fix: add upstream keepalive block to nginx/nginx.conf

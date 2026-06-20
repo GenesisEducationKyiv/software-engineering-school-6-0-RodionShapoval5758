@@ -4,17 +4,16 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"io"
 	"log/slog"
 	"net/http"
 	"strings"
 	"time"
-
-	"GithubReleaseNotificationAPI/internal/domain"
 )
 
 const (
 	GithubAPI        = "https://api.github.com"
-	githubAPIVersion = "2026-03-10"
+	githubAPIVersion = "2022-11-28"
 	userAgent        = "GithubReleaseNotificationAPI"
 )
 
@@ -40,7 +39,7 @@ func NewGithubClient(cl *http.Client, token *string) *Service {
 }
 
 func (s *Service) CheckRepo(ctx context.Context, fullName string) error {
-	ctx, cancel := context.WithTimeout(ctx, 5*time.Second)
+	ctx, cancel := context.WithTimeout(ctx, 10*time.Second)
 	defer cancel()
 
 	resp, err := s.doGet(ctx, "/repos/"+strings.TrimSpace(fullName))
@@ -48,19 +47,16 @@ func (s *Service) CheckRepo(ctx context.Context, fullName string) error {
 		return err
 	}
 	defer func() {
+		_, _ = io.Copy(io.Discard, resp.Body)
 		if err := resp.Body.Close(); err != nil {
 			slog.Warn("failed to close github repository response body", "repository", fullName, "error", err)
 		}
 	}()
 
-	if err := determineResponse(resp); err != nil {
-		return err
-	}
-
-	return nil
+	return determineResponse(resp)
 }
 
-func (s *Service) GetLatestTag(ctx context.Context, fullName string) (*domain.Release, error) {
+func (s *Service) GetLatestTag(ctx context.Context, fullName string) (*Release, error) {
 	ctx, cancel := context.WithTimeout(ctx, 5*time.Second)
 	defer cancel()
 
@@ -69,6 +65,7 @@ func (s *Service) GetLatestTag(ctx context.Context, fullName string) (*domain.Re
 		return nil, err
 	}
 	defer func() {
+		_, _ = io.Copy(io.Discard, resp.Body)
 		if err := resp.Body.Close(); err != nil {
 			slog.Warn("failed to close github latest release response body", "repository", fullName, "error", err)
 		}
@@ -112,8 +109,8 @@ func (s *Service) doGet(ctx context.Context, path string) (*http.Response, error
 	return resp, nil
 }
 
-func (r latestReleaseResponse) toDomain() *domain.Release {
-	return &domain.Release{
+func (r latestReleaseResponse) toDomain() *Release {
+	return &Release{
 		Tag:         r.TagName,
 		Name:        r.Name,
 		URL:         r.HTMLURL,
@@ -126,18 +123,18 @@ func determineResponse(resp *http.Response) error {
 	case http.StatusOK:
 		return nil
 	case http.StatusNotFound:
-		return domain.ErrNotFound
+		return ErrNotFound
 	case http.StatusUnauthorized:
-		return domain.ErrUnauthorized
+		return ErrUnauthorized
 	case http.StatusForbidden, http.StatusTooManyRequests:
 		if resp.Header.Get("X-Ratelimit-Remaining") == "0" || resp.Header.Get("Retry-After") != "" {
-			return domain.ErrRateLimited
+			return ErrRateLimited
 		}
 
-		return fmt.Errorf("%w: status %d", domain.ErrUnexpectedResponse, resp.StatusCode)
+		return fmt.Errorf("%w: status %d", ErrUnexpectedResponse, resp.StatusCode)
 	case http.StatusMovedPermanently:
-		return fmt.Errorf("%w: status %d", domain.ErrUnexpectedResponse, resp.StatusCode)
+		return fmt.Errorf("%w: status %d", ErrUnexpectedResponse, resp.StatusCode)
 	default:
-		return fmt.Errorf("%w: status %d", domain.ErrUnexpectedResponse, resp.StatusCode)
+		return fmt.Errorf("%w: status %d", ErrUnexpectedResponse, resp.StatusCode)
 	}
 }
