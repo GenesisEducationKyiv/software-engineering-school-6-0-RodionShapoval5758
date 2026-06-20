@@ -58,8 +58,6 @@ func run() error {
 	if err != nil {
 		return fmt.Errorf("connect to NATS: %w", err)
 	}
-	defer nc.Drain()
-
 	js, err := jetstream.New(nc)
 	if err != nil {
 		return fmt.Errorf("create jetstream: %w", err)
@@ -89,7 +87,14 @@ func run() error {
 		}
 	}()
 
-	return worker.Start(ctx, cfg.ScanInterval)
+	if err := worker.Start(ctx, cfg.ScanInterval); err != nil {
+		return err
+	}
+
+	if err := nc.Drain(); err != nil {
+		slog.Error("nats drain failed", "error", err)
+	}
+	return nil
 }
 
 type cursorCatalogAdapter struct {
@@ -119,5 +124,6 @@ func (e *releaseFoundEnqueuer) Enqueue(ctx context.Context, q db.DBTX, dr monito
 	if err != nil {
 		return fmt.Errorf("marshal ReleaseFound: %w", err)
 	}
+
 	return e.outbox.Insert(ctx, q, contract.SubjectReleaseFound, payload)
 }
