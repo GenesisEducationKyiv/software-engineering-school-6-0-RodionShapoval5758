@@ -66,15 +66,21 @@ func (c *Consumer) Start(ctx context.Context) error {
 			return
 		}
 
-		oc, reason := processMessage(msg.Subject(), msg.Data(), c.mailer)
+		oc, reason, sagaID := processMessage(msg.Subject(), msg.Data(), c.mailer)
 		act := decideAction(oc, meta.NumDelivered)
 
 		switch act {
 		case actionDLQ:
 			c.toDLQ(ctx, msg, reason, meta)
+			if sagaID != "" {
+				c.publishEmailFailed(ctx, sagaID, reason, meta)
+			}
 		case actionAck:
 			if err := msg.Ack(); err != nil {
 				slog.Error("msg ack failed", "error", err)
+			}
+			if sagaID != "" {
+				c.publishEmailSent(ctx, sagaID, meta)
 			}
 		default:
 			if err := msg.Nak(); err != nil {
@@ -105,35 +111,59 @@ func decideAction(oc outcome, numDelivered uint64) action {
 	}
 }
 
-func processMessage(subject string, data []byte, m Mailer) (outcome, string) {
+func processMessage(subject string, data []byte, m Mailer) (outcome, string, string) {
 	switch subject {
 	case contract.SubjectConfirmation:
 		var ev contract.ConfirmationRequested
 		if err := json.Unmarshal(data, &ev); err != nil {
 			slog.Error("unmarshal confirmation event", "error", err)
-			return outcomePoison, "unmarshalable"
+			return outcomePoison, "unmarshalable", ""
 		}
 		if err := m.SendConfirmation(ev.Email, ev.RepoName, ev.ConfirmToken); err != nil {
 			slog.Error("send confirmation email", "error", err, "email", ev.Email)
-			return outcomeRetry, err.Error()
+			return outcomeRetry, err.Error(), ev.SagaID
 		}
-		return outcomeAck, ""
+		return outcomeAck, "", ev.SagaID
 
 	case contract.SubjectRelease:
 		var ev contract.ReleaseDetected
 		if err := json.Unmarshal(data, &ev); err != nil {
 			slog.Error("unmarshal release event", "error", err)
-			return outcomePoison, "unmarshalable"
+			return outcomePoison, "unmarshalable", ""
 		}
 		if err := m.SendRelease(ev.Email, ev.UnsubscribeToken, ev.ReleaseTag, ev.ReleaseName, ev.ReleaseURL); err != nil {
 			slog.Error("send release email", "error", err, "email", ev.Email)
-			return outcomeRetry, err.Error()
+			return outcomeRetry, err.Error(), ""
 		}
-		return outcomeAck, ""
+		return outcomeAck, "", ""
 
 	default:
 		slog.Warn("unknown subject, skipping", "subject", subject)
-		return outcomeAck, ""
+		return outcomeAck, "", ""
+	}
+}
+
+func (c *Consumer) publishEmailSent(ctx context.Context, sagaID string, meta *jetstream.MsgMetadata) {
+	data, err := json.Marshal(contract.EmailSent{SagaID: sagaID})
+	if err != nil {
+		slog.Error("marshal EmailSent", "error", err)
+		return
+	}
+	msgID := "sent-" + strconv.FormatUint(meta.Sequence.Stream, 10)
+	if _, err := c.js.Publish(ctx, contract.SubjectEmailSent, data, jetstream.WithMsgID(msgID)); err != nil {
+		slog.Error("publish EmailSent failed", "saga_id", sagaID, "error", err)
+	}
+}
+
+func (c *Consumer) publishEmailFailed(ctx context.Context, sagaID, reason string, meta *jetstream.MsgMetadata) {
+	data, err := json.Marshal(contract.EmailFailed{SagaID: sagaID, Reason: reason})
+	if err != nil {
+		slog.Error("marshal EmailFailed", "error", err)
+		return
+	}
+	msgID := "failed-" + strconv.FormatUint(meta.Sequence.Stream, 10)
+	if _, err := c.js.Publish(ctx, contract.SubjectEmailFailed, data, jetstream.WithMsgID(msgID)); err != nil {
+		slog.Error("publish EmailFailed failed", "saga_id", sagaID, "error", err)
 	}
 }
 
