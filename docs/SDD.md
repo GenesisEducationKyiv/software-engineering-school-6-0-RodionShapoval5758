@@ -51,6 +51,8 @@ flowchart LR
         HTTP[HTTP Server]
         FW[Fanout Consumer]
         Relay1[Outbox Relay]
+        SagaCons[Saga Consumer]
+        SagaReaper[Saga Reaper]
     end
 
     subgraph monitoring["Monitoring Service (replicas=1)"]
@@ -75,6 +77,8 @@ flowchart LR
     HTTP -->|SQL| DB
     Relay1 -->|SQL| DB
     FW -->|SQL| DB
+    SagaCons -->|SQL| DB
+    SagaReaper -->|SQL| DB
 
     Scanner -->|SQL| DB
     TrackingConsumer -->|SQL| DB
@@ -86,9 +90,11 @@ flowchart LR
     NATS -->|ReleaseFound| FW
     NATS -->|RepoTracked/RepoUntracked| TrackingConsumer
     NATS -->|ConfirmationRequested/ReleaseDetected| NotifConsumer
+    NATS -->|EmailSent/EmailFailed| SagaCons
 
     NotifConsumer --> Mailer
     Mailer -->|Email| SMTP
+    NotifConsumer -->|EmailSent/EmailFailed| NATS
 ```
 
 ### NATS Streams
@@ -98,22 +104,25 @@ flowchart LR
 | `NOTIFICATIONS` | `notifications.>` | WorkQueue | Subscription relay, Monitoring relay | Notification svc, Subscription fanout |
 | `NOTIFICATIONS_DLQ` | `dlq.notifications` | Limits | Notification svc | — |
 | `TRACKING` | `tracking.>` | Limits | Subscription relay | Monitoring svc |
+| `SAGA` | `saga.>` | Limits | Notification svc | Subscription saga consumer |
 
 ### Event subjects
 
 | Subject | Emitted by | Consumed by | Description |
 |---|---|---|---|
-| `notifications.confirmation` | Subscription | Notification | Email confirmation link |
+| `notifications.confirmation` | Subscription | Notification | Email confirmation link (carries `saga_id`) |
 | `notifications.release` | Subscription | Notification | Per-recipient release email |
 | `notifications.release_found` | Monitoring | Subscription | Repo-level new release event |
 | `tracking.repo.tracked` | Subscription | Monitoring | New subscription confirmed |
 | `tracking.repo.untracked` | Subscription | Monitoring | Last subscriber removed |
 | `dlq.notifications` | Notification | — | Undeliverable events |
+| `saga.email.sent` | Notification | Subscription saga | Confirmation email delivered successfully |
+| `saga.email.failed` | Notification | Subscription saga | Confirmation email permanently undeliverable |
 
 ## 5. Main Components
 
 ### Subscription Service (`services/subscription`)
-Owns the REST API, subscription lifecycle, and fan-out. Serves all four endpoints. On subscribe, writes a pending subscription and a `ConfirmationRequested` outbox entry plus a `RepoTracked` outbox entry in a single transaction. On last unsubscribe, emits `RepoUntracked`. Runs the fanout NATS consumer: receives `ReleaseFound`, lists confirmed subscribers, and inserts per-recipient `ReleaseDetected` outbox rows in a single transaction.
+Owns the REST API, subscription lifecycle, fan-out, and the subscribe saga orchestrator. Serves all four endpoints. On subscribe, writes a pending subscription, a saga row, a `ConfirmationRequested` outbox entry, and a `RepoTracked` outbox entry in a single transaction. On last unsubscribe, emits `RepoUntracked`. Runs the fanout NATS consumer: receives `ReleaseFound`, lists confirmed subscribers, and inserts per-recipient `ReleaseDetected` outbox rows in a single transaction. Also runs the saga reply consumer and a TTL reaper (see Subscribe Saga below).
 
 ### Monitoring Service (`services/monitoring`, `replicas: 1`)
 Owns GitHub scanning and release detection. Consumes `RepoTracked`/`RepoUntracked` to maintain `scan_cursors`. On each tick, scans all cursored repos against GitHub with up to 10 concurrent goroutines. On a new tag, atomically advances the cursor and inserts `ReleaseFound` into `monitoring_outbox` in a single transaction. The outbox relay publishes to NATS.
@@ -124,12 +133,15 @@ Stateless email sender. Consumes `ConfirmationRequested` and `ReleaseDetected` f
 ### Transactional Outbox
 Both Subscription and Monitoring use the same pattern: state changes and "intent to publish" are committed in one database transaction. A relay goroutine polls for unpublished rows with `FOR UPDATE SKIP LOCKED`, publishes to NATS with a stable `Msg-Id` header for server-side deduplication, and marks rows published. This provides at-least-once delivery with bounded duplication, with no event loss on process restart.
 
+### Subscribe Saga Orchestrator
+A coordinated (orchestration-based) saga that drives the subscribe workflow as a recoverable multi-step transaction. Saga state is persisted in `subscribe_sagas`. Three goroutines handle it: the outbox relay (publishes the initial events), the saga reply consumer (processes `EmailSent`/`EmailFailed` from NATS), and the reaper (polls for expired sagas every 30 s). See section 6 for the full flow.
+
 ### nginx
 Edge proxy. Routes `/api/` to the Subscription service. Serves static assets from its document root.
 
 ## 6. Key Workflows
 
-### Subscribe and Confirm Flow
+### Subscribe and Confirm Flow (with Saga)
 ```mermaid
 sequenceDiagram
     actor User
@@ -142,12 +154,13 @@ sequenceDiagram
     participant Mon as Monitoring Svc
     participant Notif as Notification Svc
     participant SMTP
+    participant Saga as Saga Orchestrator
 
     User->>nginx: POST /api/subscribe
     nginx->>Sub: forward
     Sub->>GitHub: Validate repository
     Sub->>DB: find-or-create repository
-    Sub->>DB: [tx] create pending subscription\n+ INSERT outbox(ConfirmationRequested)\n+ INSERT outbox(RepoTracked)
+    Sub->>DB: [tx] create pending subscription\n+ INSERT subscribe_sagas(STARTED)\n+ INSERT outbox(ConfirmationRequested+saga_id)\n+ INSERT outbox(RepoTracked)
 
     Relay->>DB: [tx] FetchForUpdate (SKIP LOCKED)
     Relay->>NATS: publish ConfirmationRequested
@@ -156,6 +169,15 @@ sequenceDiagram
 
     NATS->>Notif: ConfirmationRequested
     Notif->>SMTP: Send confirmation email
+    alt email sent successfully
+        Notif->>NATS: publish EmailSent(saga_id)
+        NATS->>Saga: EmailSent
+        Saga->>DB: saga STARTED→AWAITING_CONFIRMATION
+    else permanent failure
+        Notif->>NATS: publish EmailFailed(saga_id)
+        NATS->>Saga: EmailFailed
+        Saga->>DB: saga→COMPENSATING→FAILED\ndelete pending subscription\nDeleteIfOrphaned (→ RepoUntracked)
+    end
 
     NATS->>Mon: RepoTracked
     Mon->>DB: upsert scan_cursors
@@ -163,7 +185,21 @@ sequenceDiagram
     Note over User: User clicks the confirmation link
     User->>nginx: GET /api/confirm/{token}
     nginx->>Sub: forward
-    Sub->>DB: Mark subscription confirmed
+    Sub->>DB: [tx] mark subscription confirmed\n+ saga AWAITING_CONFIRMATION→COMPLETED
+```
+
+### Subscribe Saga State Machine
+```mermaid
+stateDiagram-v2
+    [*] --> STARTED : POST /subscribe (sub + saga row created)
+    STARTED --> AWAITING_CONFIRMATION : EmailSent received
+    STARTED --> COMPENSATING : EmailFailed received
+    AWAITING_CONFIRMATION --> COMPLETED : User confirms (GET /confirm)
+    AWAITING_CONFIRMATION --> COMPENSATING : EmailFailed or TTL exceeded (reaper)
+    COMPENSATING --> FAILED : subscription deleted, repo untracked
+    COMPENSATING --> COMPLETED : subscription already confirmed (confirm won the race)
+    COMPLETED --> [*]
+    FAILED --> [*]
 ```
 
 ### Unsubscribe Flow
@@ -238,6 +274,7 @@ sequenceDiagram
 | `repositories` | Subscription | Repo registry (find-or-create, orphan cleanup) |
 | `subscriptions` | Subscription | Subscription lifecycle, tokens, confirmed flag |
 | `outbox` | Subscription | Outbox relay table for subscription events |
+| `subscribe_sagas` | Subscription | Subscribe saga state machine (one row per subscribe attempt) |
 | `scan_cursors` | Monitoring | Per-repo `last_seen_tag` + `full_name` for the scanner |
 | `monitoring_outbox` | Monitoring | Outbox relay table for monitoring events |
 
@@ -274,6 +311,19 @@ erDiagram
         timestamptz published_at "NULL = pending"
     }
 
+    subscribe_sagas {
+        bigserial id PK
+        text saga_id UK "NOT NULL"
+        bigint subscription_id "nullable after compensation"
+        bigint repository_id "NOT NULL"
+        varchar email "NOT NULL"
+        text state "STARTED|AWAITING_CONFIRMATION|COMPENSATING|COMPLETED|FAILED"
+        timestamptz deadline_at "NOT NULL"
+        text last_error "nullable"
+        timestamptz created_at "NOT NULL"
+        timestamptz updated_at "NOT NULL"
+    }
+
     scan_cursors {
         bigint repo_id PK
         text full_name "NOT NULL"
@@ -303,6 +353,7 @@ flowchart TB
         repos[(repositories)]
         subs[(subscriptions)]
         outboxt[(outbox)]
+        sagas[(subscribe_sagas)]
     end
 
     subgraph mon["Monitoring Service"]
@@ -332,6 +383,15 @@ flowchart TB
     TrackCons -->|"UPSERT / DELETE"| cursors
 
     Relay2 -->|"UPDATE published_at"| monoutbox
+
+    SagaOrch["Saga Orchestrator"]
+    SagaReaper["Saga Reaper"]
+
+    SagaOrch -->|"INSERT (saga row)"| sagas
+    SagaOrch -->|"UPDATE state"| sagas
+    SagaOrch -.->|"DELETE unconfirmed"| subs
+
+    SagaReaper -->|"SELECT expired"| sagas
 ```
 
 ## 8. External Integrations and Failure Handling
@@ -362,6 +422,7 @@ flowchart TB
 
 ## 9. Known Limitations
 
+- **Saga reply is not outboxed on the Notification side**: `EmailSent`/`EmailFailed` are published directly by the Notification service without a DB-backed outbox. If NATS is briefly unavailable at the moment of publish the saga reply may be lost. The orchestrator's idempotent state transitions prevent double-compensation, but a lost reply leaves the saga stuck in `STARTED` until the TTL reaper fires.
 - **`scan_cursors` bootstrap gap**: Monitoring starts with an empty `scan_cursors` table. Repos subscribed before Phase 2 will not be scanned until a new subscribe triggers a `RepoTracked` event.
 - **`RepoUntracked` best-effort**: The outbox insert happens after the subscription delete transaction, not inside it. A crash between them loses the event; monitoring continues scanning the deleted repo's cursor until a restart.
 - **`repositories.last_seen_tag` is a dead column**: Exists in the schema but is not written by any service post-Phase-2.
