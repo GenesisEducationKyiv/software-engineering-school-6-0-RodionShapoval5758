@@ -9,10 +9,16 @@ const (
 	StreamName          = "NOTIFICATIONS"
 	SubjectConfirmation = "notifications.confirmation"
 	SubjectRelease      = "notifications.release"
+	SubjectReleaseFound = "notifications.release_found"
 	SubjectAll          = "notifications.>"
 
 	StreamDLQ   = "NOTIFICATIONS_DLQ"
 	SubjectDead = "dlq.notifications"
+
+	StreamTracking       = "TRACKING"
+	SubjectRepoTracked   = "tracking.repo.tracked"
+	SubjectRepoUntracked = "tracking.repo.untracked"
+	SubjectTrackingAll   = "tracking.>"
 )
 
 type ConfirmationRequested struct {
@@ -27,6 +33,23 @@ type ReleaseDetected struct {
 	ReleaseTag       string `json:"release_tag"`
 	ReleaseName      string `json:"release_name"`
 	ReleaseURL       string `json:"release_url"`
+}
+
+type RepoTracked struct {
+	RepoID   int64  `json:"repo_id"`
+	FullName string `json:"full_name"`
+}
+
+type RepoUntracked struct {
+	RepoID int64 `json:"repo_id"`
+}
+
+type ReleaseFound struct {
+	RepoID      int64  `json:"repo_id"`
+	RepoName    string `json:"repo_name"`
+	ReleaseTag  string `json:"release_tag"`
+	ReleaseName string `json:"release_name"`
+	ReleaseURL  string `json:"release_url"`
 }
 
 type DeadLetter struct {

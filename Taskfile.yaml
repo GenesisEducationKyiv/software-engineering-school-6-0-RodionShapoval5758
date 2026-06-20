@@ -46,14 +46,17 @@ tasks:
       - task: test-e2e
 
   test-unit:
-    desc: Run unit tests
+    desc: Run unit tests across all service modules
     cmds:
-      - go test ./...
+      - go test ./services/subscription/internal/...
+      - go test ./services/monitoring/...
+      - go test ./services/notification/...
+      - go test ./services/contract/...
 
   test-integration:
     desc: Run integration tests
     cmds:
-      - go test -tags=integration ./test/integration/... -v
+      - go test -tags=integration ./services/subscription/test/integration/... -v
       - go test -tags=integration ./services/notification/internal/consumer/... -v
 
   test-e2e:
@@ -64,24 +67,32 @@ tasks:
       - docker compose down -v
 
   lint:
-    desc: Run golangci-lint
+    desc: Run golangci-lint across all service modules
     cmds:
-      - golangci-lint run -c .golangci.yaml
+      - golangci-lint run -c .golangci.yaml ./services/subscription/...
+      - golangci-lint run -c .golangci.yaml ./services/monitoring/...
+      - golangci-lint run -c .golangci.yaml ./services/notification/...
 
   lint-fix:
-    desc: Run golangci-lint with auto-fix
+    desc: Run golangci-lint with auto-fix across all service modules
     cmds:
-      - golangci-lint run -c .golangci.yaml --fix
+      - golangci-lint run -c .golangci.yaml --fix ./services/subscription/...
+      - golangci-lint run -c .golangci.yaml --fix ./services/monitoring/...
+      - golangci-lint run -c .golangci.yaml --fix ./services/notification/...
 
   format:
     desc: Format code via golangci-lint fmt
     cmds:
-      - golangci-lint fmt -c .golangci.yaml
+      - golangci-lint fmt -c .golangci.yaml ./services/subscription/...
+      - golangci-lint fmt -c .golangci.yaml ./services/monitoring/...
+      - golangci-lint fmt -c .golangci.yaml ./services/notification/...
 
   format-check:
     desc: Check formatting without applying changes
     cmds:
-      - golangci-lint fmt -c .golangci.yaml --diff
+      - golangci-lint fmt -c .golangci.yaml --diff ./services/subscription/...
+      - golangci-lint fmt -c .golangci.yaml --diff ./services/monitoring/...
+      - golangci-lint fmt -c .golangci.yaml --diff ./services/notification/...
 
 # ── k6 ───────────────────────────────────────────────────────────────────────
 
