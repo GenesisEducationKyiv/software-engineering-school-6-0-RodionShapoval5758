@@ -94,6 +94,7 @@ func run() error {
 	if err := nc.Drain(); err != nil {
 		slog.Error("nats drain failed", "error", err)
 	}
+
 	return nil
 }
 

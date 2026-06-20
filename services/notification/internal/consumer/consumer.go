@@ -94,6 +94,7 @@ func (c *Consumer) Start(ctx context.Context) error {
 	defer cc.Stop()
 
 	<-ctx.Done()
+
 	return nil
 }
 
@@ -123,6 +124,7 @@ func processMessage(subject string, data []byte, m Mailer) (outcome, string, str
 			slog.Error("send confirmation email", "error", err, "email", ev.Email)
 			return outcomeRetry, err.Error(), ev.SagaID
 		}
+
 		return outcomeAck, "", ev.SagaID
 
 	case contract.SubjectRelease:
@@ -135,6 +137,7 @@ func processMessage(subject string, data []byte, m Mailer) (outcome, string, str
 			slog.Error("send release email", "error", err, "email", ev.Email)
 			return outcomeRetry, err.Error(), ""
 		}
+
 		return outcomeAck, "", ""
 
 	default:
