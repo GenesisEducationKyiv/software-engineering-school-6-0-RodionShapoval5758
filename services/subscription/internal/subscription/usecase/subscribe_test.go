@@ -52,7 +52,7 @@ func (s *UseCaseSuite) TestSubscribe_NormalizesInput() {
 	s.github.On("CheckRepo", mock.Anything, "owner/repo").Return(nil)
 	s.catalog.On("Ensure", mock.Anything, "owner/repo").Return(1, nil)
 	s.repo.On("CreateInTx", mock.Anything, validSubMatcher("user@example.com", int64(1))).
-		Return(nil)
+		Return(1, nil)
 	s.outbox.On("Insert", mock.Anything, mock.Anything, mock.Anything).Return(nil)
 
 	err := s.subscribe.Execute(context.Background(), "  user@example.com  ", "  owner/repo  ")
@@ -111,7 +111,7 @@ func (s *UseCaseSuite) TestSubscribe_SubscriptionAlreadyExists() {
 	s.github.On("CheckRepo", mock.Anything, "owner/repo").Return(nil)
 	s.catalog.On("Ensure", mock.Anything, "owner/repo").Return(1, nil)
 	s.repo.On("CreateInTx", mock.Anything, validSubMatcher("user@example.com", int64(1))).
-		Return(db.ErrAlreadyExists)
+		Return(0, db.ErrAlreadyExists)
 
 	err := s.subscribe.Execute(context.Background(), "user@example.com", "owner/repo")
 
@@ -125,8 +125,8 @@ func (s *UseCaseSuite) TestSubscribe_TokenCollisionRetry() {
 
 	matcher := validSubMatcher("user@example.com", int64(1))
 
-	s.repo.On("CreateInTx", mock.Anything, matcher).Return(db.ErrTokenConflict).Once()
-	s.repo.On("CreateInTx", mock.Anything, matcher).Return(nil).Once()
+	s.repo.On("CreateInTx", mock.Anything, matcher).Return(0, db.ErrTokenConflict).Once()
+	s.repo.On("CreateInTx", mock.Anything, matcher).Return(1, nil).Once()
 	s.outbox.On("Insert", mock.Anything, mock.Anything, mock.Anything).Return(nil)
 
 	err := s.subscribe.Execute(context.Background(), "user@example.com", "owner/repo")
@@ -139,7 +139,7 @@ func (s *UseCaseSuite) TestSubscribe_TokenCollisionExhausted() {
 	s.github.On("CheckRepo", mock.Anything, "owner/repo").Return(nil)
 	s.catalog.On("Ensure", mock.Anything, "owner/repo").Return(1, nil)
 	s.repo.On("CreateInTx", mock.Anything, validSubMatcher("user@example.com", int64(1))).
-		Return(db.ErrTokenConflict).Times(5)
+		Return(0, db.ErrTokenConflict).Times(5)
 
 	err := s.subscribe.Execute(context.Background(), "user@example.com", "owner/repo")
 
@@ -151,7 +151,7 @@ func (s *UseCaseSuite) TestSubscribe_SubscriptionDBError() {
 	s.github.On("CheckRepo", mock.Anything, "owner/repo").Return(nil)
 	s.catalog.On("Ensure", mock.Anything, "owner/repo").Return(1, nil)
 	s.repo.On("CreateInTx", mock.Anything, validSubMatcher("user@example.com", int64(1))).
-		Return(errors.New("db error"))
+		Return(0, errors.New("db error"))
 
 	err := s.subscribe.Execute(context.Background(), "user@example.com", "owner/repo")
 
@@ -163,7 +163,7 @@ func (s *UseCaseSuite) TestSubscribe_OutboxEnqueueFails() {
 	s.github.On("CheckRepo", mock.Anything, "owner/repo").Return(nil)
 	s.catalog.On("Ensure", mock.Anything, "owner/repo").Return(1, nil)
 	s.repo.On("CreateInTx", mock.Anything, validSubMatcher("user@example.com", int64(1))).
-		Return(nil)
+		Return(1, nil)
 	s.outbox.On("Insert", mock.Anything, mock.Anything, mock.Anything).
 		Return(errors.New("broker down"))
 

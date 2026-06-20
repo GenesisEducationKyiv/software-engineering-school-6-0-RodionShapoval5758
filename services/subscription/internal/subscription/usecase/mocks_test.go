@@ -4,6 +4,7 @@ import (
 	"context"
 
 	"GithubReleaseNotificationAPI/services/subscription/internal/db"
+	"GithubReleaseNotificationAPI/services/subscription/internal/saga"
 	"GithubReleaseNotificationAPI/services/subscription/internal/subscription"
 
 	"github.com/jackc/pgx/v5"
@@ -15,14 +16,9 @@ type mockRepository struct {
 	mock.Mock
 }
 
-func (m *mockRepository) Create(ctx context.Context, s subscription.Subscription) error {
-	args := m.Called(ctx, s)
-	return args.Error(0)
-}
-
-func (m *mockRepository) CreateInTx(ctx context.Context, q db.DBTX, sub subscription.Subscription) error {
+func (m *mockRepository) CreateInTx(ctx context.Context, q db.DBTX, sub subscription.Subscription) (int64, error) {
 	args := m.Called(ctx, sub)
-	return args.Error(0)
+	return int64(args.Int(0)), args.Error(1)
 }
 
 func (m *mockRepository) FindByUnsubscribeToken(ctx context.Context, token string) (*subscription.Subscription, error) {
@@ -33,9 +29,9 @@ func (m *mockRepository) FindByUnsubscribeToken(ctx context.Context, token strin
 	return args.Get(0).(*subscription.Subscription), args.Error(1)
 }
 
-func (m *mockRepository) Confirm(ctx context.Context, token string) error {
+func (m *mockRepository) Confirm(ctx context.Context, token string) (int64, error) {
 	args := m.Called(ctx, token)
-	return args.Error(0)
+	return int64(args.Int(0)), args.Error(1)
 }
 
 func (m *mockRepository) DeleteByUnsubscribeToken(ctx context.Context, token string) error {
@@ -95,6 +91,14 @@ func (m *mockOutbox) Insert(ctx context.Context, q db.DBTX, subject string, payl
 	args := m.Called(ctx, subject, payload)
 	return args.Error(0)
 }
+
+type noopSagaStore struct{}
+
+func (noopSagaStore) InsertInTx(_ context.Context, _ db.DBTX, _ saga.Row) error { return nil }
+
+type noopOrchestrator struct{}
+
+func (noopOrchestrator) HandleConfirmed(_ context.Context, _ int64) error { return nil }
 
 type fakeTx struct{}
 

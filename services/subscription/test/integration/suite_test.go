@@ -7,10 +7,13 @@ import (
 	"net/http"
 	"testing"
 
+	"time"
+
 	"GithubReleaseNotificationAPI/services/subscription/internal/catalog"
 	"GithubReleaseNotificationAPI/services/subscription/internal/db"
 	"GithubReleaseNotificationAPI/services/subscription/internal/metrics"
 	"GithubReleaseNotificationAPI/services/subscription/internal/outbox"
+	"GithubReleaseNotificationAPI/services/subscription/internal/saga"
 	"GithubReleaseNotificationAPI/services/subscription/internal/subscription"
 	"GithubReleaseNotificationAPI/services/subscription/internal/subscription/usecase"
 	"GithubReleaseNotificationAPI/services/subscription/internal/transport/http/handler"
@@ -40,8 +43,11 @@ func (s *IntegrationSuite) SetupSuite() {
 	deleteCat := catalog.NewDeleteIfOrphaned(testPool, outboxStore)
 	s.githubFake = &fakeGithubClient{}
 
-	sub := usecase.NewSubscribe(subRepo, ensureCat, s.githubFake, outboxStore, db.WrapPool(testPool))
-	conf := usecase.NewConfirm(subRepo)
+	sagaStore := saga.NewStore()
+	sagaOrchestrator := saga.NewOrchestrator(sagaStore, db.WrapPool(testPool), deleteCat, subRepo)
+
+	sub := usecase.NewSubscribe(subRepo, ensureCat, s.githubFake, outboxStore, sagaStore, db.WrapPool(testPool), 24*time.Hour)
+	conf := usecase.NewConfirm(subRepo, sagaOrchestrator)
 	unsub := usecase.NewUnsubscribe(subRepo, deleteCat)
 	list := usecase.NewList(subRepo)
 
@@ -51,7 +57,7 @@ func (s *IntegrationSuite) SetupSuite() {
 }
 
 func (s *IntegrationSuite) SetupTest() {
-	_, err := testPool.Exec(context.Background(), "TRUNCATE subscriptions, repositories CASCADE")
+	_, err := testPool.Exec(context.Background(), "TRUNCATE subscribe_sagas, subscriptions, repositories CASCADE")
 	s.Require().NoError(err)
 	s.githubFake.err = nil
 }

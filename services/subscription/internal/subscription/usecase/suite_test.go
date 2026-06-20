@@ -2,6 +2,7 @@ package usecase_test
 
 import (
 	"testing"
+	"time"
 
 	"GithubReleaseNotificationAPI/services/subscription/internal/subscription/usecase"
 
@@ -28,8 +29,8 @@ func (s *UseCaseSuite) SetupTest() {
 	s.github = new(mockGithub)
 	s.outbox = new(mockOutbox)
 
-	s.subscribe = usecase.NewSubscribe(s.repo, s.catalog, s.github, s.outbox, &fakeTxBeginner{})
-	s.confirm = usecase.NewConfirm(s.repo)
+	s.subscribe = usecase.NewSubscribe(s.repo, s.catalog, s.github, s.outbox, noopSagaStore{}, &fakeTxBeginner{}, 24*time.Hour)
+	s.confirm = usecase.NewConfirm(s.repo, noopOrchestrator{})
 	s.unsubscribe = usecase.NewUnsubscribe(s.repo, s.catalog)
 	s.list = usecase.NewList(s.repo)
 }
