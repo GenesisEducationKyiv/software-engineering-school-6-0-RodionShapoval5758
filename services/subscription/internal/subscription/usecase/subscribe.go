@@ -6,10 +6,13 @@ import (
 	"errors"
 	"fmt"
 	"strings"
+	"time"
 
 	"GithubReleaseNotificationAPI/contract"
 	"GithubReleaseNotificationAPI/services/subscription/internal/db"
 	githubclient "GithubReleaseNotificationAPI/services/subscription/internal/github"
+	"GithubReleaseNotificationAPI/services/subscription/internal/idgen"
+	"GithubReleaseNotificationAPI/services/subscription/internal/saga"
 	"GithubReleaseNotificationAPI/services/subscription/internal/subscription"
 	"GithubReleaseNotificationAPI/services/subscription/internal/subscription/internal/domain"
 
@@ -17,7 +20,7 @@ import (
 )
 
 type subscribeRepository interface {
-	CreateInTx(ctx context.Context, q db.DBTX, sub domain.Subscription) error
+	CreateInTx(ctx context.Context, q db.DBTX, sub domain.Subscription) (int64, error)
 }
 
 type subscribeCatalog interface {
@@ -32,14 +35,20 @@ type subscribeOutbox interface {
 	Insert(ctx context.Context, q db.DBTX, subject string, payload []byte) error
 }
 
+type subscribeSaga interface {
+	InsertInTx(ctx context.Context, q db.DBTX, r saga.Row) error
+}
+
 const maxTokenAttempts = 5
 
 type Subscribe struct {
-	repo    subscribeRepository
-	catalog subscribeCatalog
-	github  subscribeGithub
-	outbox  subscribeOutbox
-	pool    db.TxBeginner
+	repo      subscribeRepository
+	catalog   subscribeCatalog
+	github    subscribeGithub
+	outbox    subscribeOutbox
+	sagaStore subscribeSaga
+	pool      db.TxBeginner
+	sagaTTL   time.Duration
 }
 
 func NewSubscribe(
@@ -47,14 +56,18 @@ func NewSubscribe(
 	catalog subscribeCatalog,
 	github subscribeGithub,
 	outbox subscribeOutbox,
+	sagaStore subscribeSaga,
 	pool db.TxBeginner,
+	sagaTTL time.Duration,
 ) *Subscribe {
 	return &Subscribe{
-		repo:    repo,
-		catalog: catalog,
-		github:  github,
-		outbox:  outbox,
-		pool:    pool,
+		repo:      repo,
+		catalog:   catalog,
+		github:    github,
+		outbox:    outbox,
+		sagaStore: sagaStore,
+		pool:      pool,
+		sagaTTL:   sagaTTL,
 	}
 }
 
@@ -116,6 +129,8 @@ func (uc *Subscribe) createPending(ctx context.Context, email, repoName string, 
 		return fmt.Errorf("marshal RepoTracked event: %w", err)
 	}
 
+	sagaID := idgen.New()
+
 	for range maxTokenAttempts {
 		sub, err := domain.NewSubscription(email, repositoryID)
 		if err != nil {
@@ -123,6 +138,7 @@ func (uc *Subscribe) createPending(ctx context.Context, email, repoName string, 
 		}
 
 		confirmPayload, err := json.Marshal(contract.ConfirmationRequested{
+			SagaID:       sagaID,
 			Email:        email,
 			RepoName:     repoName,
 			ConfirmToken: sub.ConfirmToken,
@@ -131,7 +147,7 @@ func (uc *Subscribe) createPending(ctx context.Context, email, repoName string, 
 			return fmt.Errorf("marshal confirmation event: %w", err)
 		}
 
-		err = uc.createAndEnqueue(ctx, *sub, confirmPayload, repoTrackedPayload)
+		err = uc.createAndEnqueue(ctx, sagaID, *sub, confirmPayload, repoTrackedPayload)
 		if errors.Is(err, db.ErrTokenConflict) {
 			continue
 		}
@@ -150,15 +166,29 @@ func (uc *Subscribe) createPending(ctx context.Context, email, repoName string, 
 	return fmt.Errorf("create subscription tokens conflict after retries: %w", db.ErrTokenConflict)
 }
 
-func (uc *Subscribe) createAndEnqueue(ctx context.Context, sub domain.Subscription, confirmPayload, repoTrackedPayload []byte) error {
+func (uc *Subscribe) createAndEnqueue(ctx context.Context, sagaID string, sub domain.Subscription, confirmPayload, repoTrackedPayload []byte) error {
 	tx, err := uc.pool.BeginTx(ctx, pgx.TxOptions{})
 	if err != nil {
 		return fmt.Errorf("begin tx: %w", err)
 	}
 	defer func() { _ = tx.Rollback(ctx) }()
 
-	if err := uc.repo.CreateInTx(ctx, tx, sub); err != nil {
+	subscriptionID, err := uc.repo.CreateInTx(ctx, tx, sub)
+	if err != nil {
 		return err
+	}
+
+	sagaRow := saga.Row{
+		SagaID:         sagaID,
+		SubscriptionID: subscriptionID,
+		RepositoryID:   sub.RepositoryID,
+		Email:          sub.Email,
+		State:          saga.StateStarted,
+		DeadlineAt:     time.Now().Add(uc.sagaTTL),
+	}
+
+	if err := uc.sagaStore.InsertInTx(ctx, tx, sagaRow); err != nil {
+		return fmt.Errorf("insert saga: %w", err)
 	}
 
 	if err := uc.outbox.Insert(ctx, tx, contract.SubjectConfirmation, confirmPayload); err != nil {
