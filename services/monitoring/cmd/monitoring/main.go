@@ -13,13 +13,15 @@ import (
 
 	"GithubReleaseNotificationAPI/contract"
 	monconfig "GithubReleaseNotificationAPI/services/monitoring/internal/config"
-	monconsumer "GithubReleaseNotificationAPI/services/monitoring/internal/consumer"
 	"GithubReleaseNotificationAPI/services/monitoring/internal/db"
 	"GithubReleaseNotificationAPI/services/monitoring/internal/github"
 	"GithubReleaseNotificationAPI/services/monitoring/internal/monitoring"
 	monrelay "GithubReleaseNotificationAPI/services/monitoring/internal/relay"
 	"GithubReleaseNotificationAPI/services/monitoring/internal/store"
+	subscriptionv1pb "GithubReleaseNotificationAPI/services/subscription/api/gen/subscriptionv1/subscription/v1"
+	"GithubReleaseNotificationAPI/services/subscription/api/gen/subscriptionv1/subscription/v1/v1connect"
 
+	"connectrpc.com/connect"
 	natsgo "github.com/nats-io/nats.go"
 	"github.com/nats-io/nats.go/jetstream"
 )
@@ -66,13 +68,18 @@ func run() error {
 	cursorStore := store.NewCursorStore(pool)
 	outboxStore := store.NewOutboxStore()
 
+	grpcClient := v1connect.NewSubscriptionServiceClient(
+		http.DefaultClient,
+		cfg.SubscriptionGRPCAddr,
+		connect.WithGRPC(),
+	)
+
 	githubClient := github.NewGithubClient(&http.Client{Timeout: 15 * time.Second}, &cfg.GithubToken)
 
-	catalogAdapter := &cursorCatalogAdapter{cursors: cursorStore}
+	catalogAdapter := &cursorCatalogAdapter{cursors: cursorStore, grpc: grpcClient}
 	enqueuer := &releaseFoundEnqueuer{outbox: outboxStore}
 	worker := monitoring.NewWorker(githubClient, catalogAdapter, enqueuer, nil)
 
-	trackingConsumer := monconsumer.New(js, cursorStore, pool)
 	relay := monrelay.New(pool, js, outboxStore)
 
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
@@ -81,11 +88,6 @@ func run() error {
 	slog.Info("monitoring service started", "scan_interval", cfg.ScanInterval)
 
 	go relay.Run(ctx)
-	go func() {
-		if err := trackingConsumer.Start(ctx); err != nil && ctx.Err() == nil {
-			slog.Error("tracking consumer error", "error", err)
-		}
-	}()
 
 	if err := worker.Start(ctx, cfg.ScanInterval); err != nil {
 		return err
@@ -100,14 +102,33 @@ func run() error {
 
 type cursorCatalogAdapter struct {
 	cursors *store.CursorStore
+	grpc    v1connect.SubscriptionServiceClient
 }
 
 func (a *cursorCatalogAdapter) ListTracked(ctx context.Context) ([]monitoring.TrackedRepo, error) {
-	return a.cursors.ListTracked(ctx)
+	resp, err := a.grpc.ListTrackedRepos(ctx, connect.NewRequest(&subscriptionv1pb.ListTrackedReposRequest{}))
+	if err != nil {
+		return nil, fmt.Errorf("list tracked repos via grpc: %w", err)
+	}
+
+	repos := make([]monitoring.TrackedRepo, 0, len(resp.Msg.Repos))
+	for _, r := range resp.Msg.Repos {
+		tag, err := a.cursors.GetLastSeenTag(ctx, r.RepoId)
+		if err != nil {
+			return nil, err
+		}
+		repos = append(repos, monitoring.TrackedRepo{
+			ID:          r.RepoId,
+			FullName:    r.FullName,
+			LastSeenTag: tag,
+		})
+	}
+
+	return repos, nil
 }
 
-func (a *cursorCatalogAdapter) UpdateLastSeenTagAtomic(ctx context.Context, repoID int64, tag string, onTx func(context.Context, db.DBTX) error) error {
-	return a.cursors.UpdateLastSeenTagAtomic(ctx, repoID, tag, onTx)
+func (a *cursorCatalogAdapter) UpdateLastSeenTagAtomic(ctx context.Context, repoID int64, fullName, tag string, onTx func(context.Context, db.DBTX) error) error {
+	return a.cursors.UpdateLastSeenTagAtomic(ctx, repoID, fullName, tag, onTx)
 }
 
 type releaseFoundEnqueuer struct {
