@@ -10,15 +10,17 @@ import (
 )
 
 var (
-	ErrMissingDatabaseURL = errors.New("DATABASE_URL is required")
-	ErrMissingNATSUrl     = errors.New("NATS_URL is required")
+	ErrMissingDatabaseURL          = errors.New("DATABASE_URL is required")
+	ErrMissingNATSUrl              = errors.New("NATS_URL is required")
+	ErrMissingSubscriptionGRPCAddr = errors.New("SUBSCRIPTION_GRPC_ADDR is required")
 )
 
 type Config struct {
-	DatabaseURL  string
-	GithubToken  string
-	NATSUrl      string
-	ScanInterval time.Duration
+	DatabaseURL          string
+	GithubToken          string
+	NATSUrl              string
+	ScanInterval         time.Duration
+	SubscriptionGRPCAddr string
 }
 
 func Load() (*Config, error) {
@@ -35,10 +37,11 @@ func loadFromEnv() *Config {
 		interval = 0
 	}
 	return &Config{
-		DatabaseURL:  os.Getenv("DATABASE_URL"),
-		GithubToken:  os.Getenv("GITHUB_TOKEN"),
-		NATSUrl:      os.Getenv("NATS_URL"),
-		ScanInterval: interval,
+		DatabaseURL:          os.Getenv("DATABASE_URL"),
+		GithubToken:          os.Getenv("GITHUB_TOKEN"),
+		NATSUrl:              os.Getenv("NATS_URL"),
+		ScanInterval:         interval,
+		SubscriptionGRPCAddr: os.Getenv("SUBSCRIPTION_GRPC_ADDR"),
 	}
 }
 
@@ -55,6 +58,10 @@ func (c *Config) validate() error {
 	if c.DatabaseURL == "" {
 		return ErrMissingDatabaseURL
 	}
+	if c.SubscriptionGRPCAddr == "" {
+		return ErrMissingSubscriptionGRPCAddr
+	}
+
 	return nil
 }
 
