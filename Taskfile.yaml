@@ -7,6 +7,12 @@ vars:
   K6_TREND_STATS: '{{.K6_TREND_STATS | default "p(95),p(99),avg,min,max"}}'
 
 tasks:
+  proto:
+    desc: Generate protobuf and connect-go code
+    dir: services/subscription/api
+    cmds:
+      - buf generate
+
   build:
     desc: Build images
     cmds:
