@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"GithubReleaseNotificationAPI/contract"
+	"GithubReleaseNotificationAPI/services/subscription/api/gen/subscriptionv1/subscription/v1/v1connect"
 	"GithubReleaseNotificationAPI/services/subscription/internal/catalog"
 	"GithubReleaseNotificationAPI/services/subscription/internal/config"
 	"GithubReleaseNotificationAPI/services/subscription/internal/db"
@@ -19,8 +20,12 @@ import (
 	"GithubReleaseNotificationAPI/services/subscription/internal/saga"
 	"GithubReleaseNotificationAPI/services/subscription/internal/subscription"
 	"GithubReleaseNotificationAPI/services/subscription/internal/subscription/usecase"
-	"GithubReleaseNotificationAPI/services/subscription/internal/transport/http/handler"
+	"GithubReleaseNotificationAPI/services/subscription/internal/transport/grpc/handler"
+	"GithubReleaseNotificationAPI/services/subscription/internal/transport/grpc/interceptor"
+	httphandler "GithubReleaseNotificationAPI/services/subscription/internal/transport/http/handler"
 	httpRouter "GithubReleaseNotificationAPI/services/subscription/internal/transport/http/router"
+
+	"connectrpc.com/connect"
 
 	"github.com/jackc/pgx/v5/pgxpool"
 	natsgo "github.com/nats-io/nats.go"
@@ -123,15 +128,26 @@ func Build(cfg *config.Config) (*App, error) {
 	reg := prometheus.NewRegistry()
 	appMetrics := metrics.New(reg)
 
-	subHandler := handler.New(subscribeUC, confirmUC, unsubscribeUC, listUC)
-	router := httpRouter.New(subHandler, cfg.ApiKey, appMetrics, &dbPinger{dbPool}, &natsPinger{nc})
+	httpHandler := httphandler.New(subscribeUC, confirmUC, unsubscribeUC, listUC)
+	chiRouter := httpRouter.New(httpHandler, cfg.ApiKey, appMetrics, &dbPinger{dbPool}, &natsPinger{nc})
+
+	listTrackedUC := catalog.NewListTracked(dbPool)
+	grpcHandler := handler.New(subscribeUC, confirmUC, unsubscribeUC, listUC, listTrackedUC)
+	connectPath, connectHandler := v1connect.NewSubscriptionServiceHandler(
+		grpcHandler,
+		connect.WithInterceptors(interceptor.NewAuthInterceptor(cfg.ApiKey)),
+	)
+
+	mux := http.NewServeMux()
+	mux.Handle(connectPath, connectHandler)
+	mux.Handle("/", chiRouter)
 
 	fanoutWorker := fanout.NewWorker(js, dbPool, &recipientListerAdapter{lister: listUC}, outboxStore)
 	sagaConsumer := saga.NewConsumer(js, sagaOrchestrator)
 	sagaReaper := saga.NewReaper(dbPool, sagaStore, sagaOrchestrator)
 
 	return &App{
-		server:     &http.Server{Addr: ":" + cfg.Port, Handler: router},
+		server:     &http.Server{Addr: ":" + cfg.Port, Handler: mux},
 		relay:      outboxRelay,
 		fanout:     fanoutWorker,
 		sagaCons:   sagaConsumer,
