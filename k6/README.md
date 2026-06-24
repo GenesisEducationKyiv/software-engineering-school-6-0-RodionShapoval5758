@@ -14,7 +14,7 @@ brew install k6            # macOS
 sudo apt install k6        # Debian/Ubuntu
 # or: https://k6.io/docs/get-started/installation/
 
-# Stack must be running with Prometheus remote-write enabled (already in docker-compose.yaml).
+# Stack must be running with Prometheus remote-write enabled (already in compose.yaml).
 make up
 ```
 

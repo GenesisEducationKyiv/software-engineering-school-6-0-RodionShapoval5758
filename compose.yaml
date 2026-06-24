@@ -6,7 +6,7 @@ x-logging: &default-logging
 
 services:
   nats:
-    image: nats:2-alpine
+    image: nats:2.11-alpine
     container_name: github-release-notification-nats
     restart: unless-stopped
     logging: *default-logging
@@ -82,6 +82,7 @@ services:
       GITHUB_TOKEN: ${GITHUB_TOKEN}
       NATS_URL: nats://nats:4222
       SCAN_INTERVAL: "25s"
+      SUBSCRIPTION_GRPC_ADDR: http://subscription:8080
 
   notification:
     build:

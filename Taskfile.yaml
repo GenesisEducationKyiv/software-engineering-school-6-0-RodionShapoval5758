@@ -1,6 +1,7 @@
 version: '3'
 
 vars:
+  COMPOSE:        '{{.COMPOSE        | default "docker compose"}}'
   K6_PROM_URL:    '{{.K6_PROM_URL    | default "http://localhost:9090/api/v1/write"}}'
   K6_BASE_URL:    '{{.K6_BASE_URL    | default "http://localhost"}}'
   K6_API_KEY:     '{{.K6_API_KEY     | default "genesis-summer-school"}}'
@@ -16,33 +17,33 @@ tasks:
   build:
     desc: Build images
     cmds:
-      - docker compose build
+      - '{{.COMPOSE}} build'
 
   up-core:
     desc: Start core services
     cmds:
-      - docker compose up -d --wait
+      - '{{.COMPOSE}} up -d --wait'
 
   down-core:
     desc: Stop core services
     cmds:
-      - docker compose down
+      - '{{.COMPOSE}} down'
 
   down-all:
     desc: Stop all profiles (metrics, logging, setup)
     cmds:
-      - docker compose --profile metrics --profile logging --profile setup down
+      - '{{.COMPOSE}} --profile metrics --profile logging --profile setup down'
 
   up-full:
     desc: Start core + metrics + logging profiles
     cmds:
-      - docker compose --profile metrics --profile logging up -d --wait
+      - '{{.COMPOSE}} --profile metrics --profile logging up -d --wait'
       - task: observability-setup
 
   observability-setup:
     desc: Run one-off kibana setup
     cmds:
-      - docker compose --profile logging --profile setup run --rm kibana-setup
+      - '{{.COMPOSE}} --profile logging --profile setup run --rm kibana-setup'
 
   test-all:
     desc: Run unit, integration and e2e tests
@@ -68,9 +69,9 @@ tasks:
   test-e2e:
     desc: Spin up stack, run Playwright tests, tear down
     cmds:
-      - API_KEY=test-api-key docker compose up -d --wait --build
+      - 'API_KEY=test-api-key {{.COMPOSE}} up -d --wait --build'
       - cd frontend && API_KEY=test-api-key npx playwright test
-      - docker compose down -v
+      - '{{.COMPOSE}} down -v'
 
   lint:
     desc: Run golangci-lint across all service modules
@@ -179,5 +180,4 @@ tasks:
   k6-clean:
     desc: Delete load-test subscriptions from the database
     cmds:
-      - docker compose exec -T postgres_db psql -U postgres -d github_release_notifications
-          -c "DELETE FROM subscriptions WHERE email LIKE '%@loadtest.local';"
+      - '{{.COMPOSE}} exec -T postgres_db psql -U postgres -d github_release_notifications -c "DELETE FROM subscriptions WHERE email LIKE ''%@loadtest.local'';"'
