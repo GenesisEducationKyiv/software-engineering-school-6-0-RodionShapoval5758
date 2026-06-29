@@ -13,11 +13,14 @@ var (
 	ErrMissingDatabaseURL = errors.New("DATABASE_URL is required")
 	ErrInvalidPortFormat  = errors.New("PORT must be a valid integer")
 	ErrInvalidPort        = errors.New("PORT must be a valid TCP port (1-65535)")
+	ErrInvalidGRPCPort    = errors.New("GRPC_PORT must be a valid TCP port (1-65535)")
+	ErrInvalidGRPCPortFmt = errors.New("GRPC_PORT must be a valid integer")
 )
 
 type Config struct {
 	DatabaseURL    string
 	Port           string
+	GRPCPort       string
 	GithubToken    string
 	NATSUrl        string
 	ApiKey         string
@@ -47,6 +50,7 @@ func loadFromEnv() *Config {
 	return &Config{
 		DatabaseURL:    os.Getenv("DATABASE_URL"),
 		Port:           os.Getenv("PORT"),
+		GRPCPort:       os.Getenv("GRPC_PORT"),
 		GithubToken:    os.Getenv("GITHUB_TOKEN"),
 		NATSUrl:        os.Getenv("NATS_URL"),
 		ApiKey:         os.Getenv("API_KEY"),
@@ -57,6 +61,10 @@ func loadFromEnv() *Config {
 func (cfg *Config) applyDefaults() {
 	if cfg.Port == "" {
 		cfg.Port = "8080"
+	}
+
+	if cfg.GRPCPort == "" {
+		cfg.GRPCPort = "50051"
 	}
 
 	if cfg.NATSUrl == "" {
@@ -75,6 +83,14 @@ func (cfg *Config) validate() error {
 	}
 	if port <= 0 || port > 65535 {
 		return ErrInvalidPort
+	}
+
+	grpcPort, err := strconv.Atoi(cfg.GRPCPort)
+	if err != nil {
+		return ErrInvalidGRPCPortFmt
+	}
+	if grpcPort <= 0 || grpcPort > 65535 {
+		return ErrInvalidGRPCPort
 	}
 
 	return nil
