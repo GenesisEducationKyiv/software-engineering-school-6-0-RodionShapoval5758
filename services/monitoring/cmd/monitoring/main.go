@@ -24,6 +24,11 @@ import (
 	"github.com/nats-io/nats.go/jetstream"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/credentials/insecure"
+	"google.golang.org/grpc/keepalive"
+)
+
+const (
+	grpcListTrackedTimeout = 5 * time.Second
 )
 
 func main() {
@@ -68,7 +73,27 @@ func run() error {
 	cursorStore := store.NewCursorStore(pool)
 	outboxStore := store.NewOutboxStore()
 
-	conn, err := grpc.NewClient(cfg.SubscriptionGRPCAddr, grpc.WithTransportCredentials(insecure.NewCredentials()))
+	conn, err := grpc.NewClient(
+		cfg.SubscriptionGRPCAddr,
+		grpc.WithTransportCredentials(insecure.NewCredentials()),
+		grpc.WithKeepaliveParams(keepalive.ClientParameters{
+			Time:                10 * time.Second,
+			Timeout:             5 * time.Second,
+			PermitWithoutStream: true,
+		}),
+		grpc.WithDefaultServiceConfig(`{
+			"methodConfig": [{
+				"name": [{"service": "catalog.v1.CatalogService"}],
+				"retryPolicy": {
+					"maxAttempts": 3,
+					"initialBackoff": "0.5s",
+					"maxBackoff": "5s",
+					"backoffMultiplier": 2.0,
+					"retryableStatusCodes": ["UNAVAILABLE"]
+				}
+			}]
+		}`),
+	)
 	if err != nil {
 		return fmt.Errorf("connect to subscription grpc: %w", err)
 	}
@@ -108,7 +133,10 @@ type cursorCatalogAdapter struct {
 }
 
 func (a *cursorCatalogAdapter) ListTracked(ctx context.Context) ([]monitoring.TrackedRepo, error) {
-	resp, err := a.grpc.ListTrackedRepos(ctx, &catalogv1.ListTrackedReposRequest{})
+	ctx, cancel := context.WithTimeout(ctx, grpcListTrackedTimeout)
+	defer cancel()
+
+	resp, err := a.grpc.ListTrackedRepos(ctx, &catalogv1.ListTrackedReposRequest{}, grpc.WaitForReady(true))
 	if err != nil {
 		return nil, fmt.Errorf("list tracked repos via grpc: %w", err)
 	}
