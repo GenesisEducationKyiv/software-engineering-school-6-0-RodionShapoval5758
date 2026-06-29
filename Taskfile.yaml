@@ -9,7 +9,7 @@ vars:
 
 tasks:
   proto:
-    desc: Generate protobuf and connect-go code
+    desc: Generate protobuf and gRPC code
     dir: services/subscription/api
     cmds:
       - buf generate

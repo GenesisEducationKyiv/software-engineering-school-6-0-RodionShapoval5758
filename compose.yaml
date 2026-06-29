@@ -54,6 +54,7 @@ services:
       filebeat_collect: "true"
     environment:
       PORT: "8080"
+      GRPC_PORT: "50051"
       DATABASE_URL: postgres://postgres:password@postgres_db:5432/github_release_notifications?sslmode=disable
       GITHUB_TOKEN: ${GITHUB_TOKEN}
       API_KEY: ${API_KEY}
@@ -82,7 +83,7 @@ services:
       GITHUB_TOKEN: ${GITHUB_TOKEN}
       NATS_URL: nats://nats:4222
       SCAN_INTERVAL: "25s"
-      SUBSCRIPTION_GRPC_ADDR: http://subscription:8080
+      SUBSCRIPTION_GRPC_ADDR: subscription:50051
 
   notification:
     build:
