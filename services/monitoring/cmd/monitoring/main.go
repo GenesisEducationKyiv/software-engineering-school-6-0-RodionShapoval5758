@@ -18,12 +18,12 @@ import (
 	"GithubReleaseNotificationAPI/services/monitoring/internal/monitoring"
 	monrelay "GithubReleaseNotificationAPI/services/monitoring/internal/relay"
 	"GithubReleaseNotificationAPI/services/monitoring/internal/store"
-	subscriptionv1pb "GithubReleaseNotificationAPI/services/subscription/api/gen/subscriptionv1/subscription/v1"
-	"GithubReleaseNotificationAPI/services/subscription/api/gen/subscriptionv1/subscription/v1/v1connect"
+	catalogv1 "GithubReleaseNotificationAPI/services/subscription/api/gen/catalogv1/catalog/v1"
 
-	"connectrpc.com/connect"
 	natsgo "github.com/nats-io/nats.go"
 	"github.com/nats-io/nats.go/jetstream"
+	"google.golang.org/grpc"
+	"google.golang.org/grpc/credentials/insecure"
 )
 
 func main() {
@@ -68,11 +68,13 @@ func run() error {
 	cursorStore := store.NewCursorStore(pool)
 	outboxStore := store.NewOutboxStore()
 
-	grpcClient := v1connect.NewSubscriptionServiceClient(
-		http.DefaultClient,
-		cfg.SubscriptionGRPCAddr,
-		connect.WithGRPC(),
-	)
+	conn, err := grpc.NewClient(cfg.SubscriptionGRPCAddr, grpc.WithTransportCredentials(insecure.NewCredentials()))
+	if err != nil {
+		return fmt.Errorf("connect to subscription grpc: %w", err)
+	}
+	defer conn.Close()
+
+	grpcClient := catalogv1.NewCatalogServiceClient(conn)
 
 	githubClient := github.NewGithubClient(&http.Client{Timeout: 15 * time.Second}, &cfg.GithubToken)
 
@@ -102,17 +104,17 @@ func run() error {
 
 type cursorCatalogAdapter struct {
 	cursors *store.CursorStore
-	grpc    v1connect.SubscriptionServiceClient
+	grpc    catalogv1.CatalogServiceClient
 }
 
 func (a *cursorCatalogAdapter) ListTracked(ctx context.Context) ([]monitoring.TrackedRepo, error) {
-	resp, err := a.grpc.ListTrackedRepos(ctx, connect.NewRequest(&subscriptionv1pb.ListTrackedReposRequest{}))
+	resp, err := a.grpc.ListTrackedRepos(ctx, &catalogv1.ListTrackedReposRequest{})
 	if err != nil {
 		return nil, fmt.Errorf("list tracked repos via grpc: %w", err)
 	}
 
-	repos := make([]monitoring.TrackedRepo, 0, len(resp.Msg.Repos))
-	for _, r := range resp.Msg.Repos {
+	repos := make([]monitoring.TrackedRepo, 0, len(resp.Repos))
+	for _, r := range resp.Repos {
 		tag, err := a.cursors.GetLastSeenTag(ctx, r.RepoId)
 		if err != nil {
 			return nil, err
