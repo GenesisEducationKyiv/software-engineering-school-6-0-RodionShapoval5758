@@ -65,6 +65,7 @@ tasks:
     cmds:
       - go test -tags=integration ./services/subscription/test/integration/... -v
       - go test -tags=integration ./services/notification/internal/consumer/... -v
+      - go test -tags=integration ./services/monitoring/test/integration/... -v
 
   test-e2e:
     desc: Spin up stack, run Playwright tests, tear down
