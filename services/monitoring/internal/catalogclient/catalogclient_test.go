@@ -96,6 +96,7 @@ func TestListTracked_GRPCError(t *testing.T) {
 	assert.Nil(t, repos)
 	require.Error(t, err)
 	assert.True(t, strings.Contains(err.Error(), "list tracked repos via grpc"))
+	grpcMock.AssertExpectations(t)
 }
 
 func TestListTracked_CursorError(t *testing.T) {
