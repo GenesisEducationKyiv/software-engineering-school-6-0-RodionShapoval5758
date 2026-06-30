@@ -97,7 +97,7 @@ func run() error {
 	if err != nil {
 		return fmt.Errorf("connect to subscription grpc: %w", err)
 	}
-	defer conn.Close()
+	defer func() { _ = conn.Close() }()
 
 	grpcClient := catalogv1.NewCatalogServiceClient(conn)
 
