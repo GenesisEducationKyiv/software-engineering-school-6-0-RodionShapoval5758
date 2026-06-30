@@ -12,12 +12,6 @@ const findByNameQuery = `
 	WHERE name = $1
 `
 
-const updateLastSeenTagByIDQuery = `
-	UPDATE repositories
-	SET last_seen_tag = $2, updated_at = now()
-	WHERE id = $1
-`
-
 const deleteByIDQuery = `
 	DELETE FROM repositories
 	WHERE id = $1

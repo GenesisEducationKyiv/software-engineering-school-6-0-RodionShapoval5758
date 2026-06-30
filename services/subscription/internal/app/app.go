@@ -85,18 +85,6 @@ func Build(cfg *config.Config) (*App, error) {
 	}
 
 	if _, err := js.CreateOrUpdateStream(initCtx, jetstream.StreamConfig{
-		Name:       contract.StreamTracking,
-		Subjects:   []string{contract.SubjectTrackingAll},
-		Storage:    jetstream.FileStorage,
-		Duplicates: 2 * time.Minute,
-		MaxAge:     24 * time.Hour,
-	}); err != nil {
-		_ = nc.Drain()
-		dbPool.Close()
-		return nil, fmt.Errorf("ensure tracking stream: %w", err)
-	}
-
-	if _, err := js.CreateOrUpdateStream(initCtx, jetstream.StreamConfig{
 		Name:       contract.StreamSaga,
 		Subjects:   []string{contract.SubjectSagaAll},
 		Storage:    jetstream.FileStorage,
@@ -115,7 +103,7 @@ func Build(cfg *config.Config) (*App, error) {
 	githubClient := github.NewGithubClient(&http.Client{Timeout: 15 * time.Second}, &cfg.GithubToken)
 
 	ensureUC := catalog.NewEnsure(dbPool)
-	deleteIfOrphanedUC := catalog.NewDeleteIfOrphaned(dbPool, outboxStore)
+	deleteIfOrphanedUC := catalog.NewDeleteIfOrphaned(dbPool)
 
 	sagaStore := saga.NewStore()
 	sagaOrchestrator := saga.NewOrchestrator(sagaStore, db.WrapPool(dbPool), deleteIfOrphanedUC, subRepo)

@@ -2,12 +2,9 @@ package usecase
 
 import (
 	"context"
-	"encoding/json"
 	"errors"
 	"fmt"
-	"log/slog"
 
-	"GithubReleaseNotificationAPI/contract"
 	"GithubReleaseNotificationAPI/services/subscription/internal/db"
 )
 
@@ -15,18 +12,12 @@ type deleteStore interface {
 	DeleteByID(ctx context.Context, repositoryID int64) error
 }
 
-type outboxWriter interface {
-	Insert(ctx context.Context, q db.DBTX, subject string, payload []byte) error
-}
-
 type DeleteIfOrphaned struct {
-	store  deleteStore
-	pool   db.DBTX
-	outbox outboxWriter
+	store deleteStore
 }
 
-func NewDeleteIfOrphaned(store deleteStore, pool db.DBTX, outbox outboxWriter) *DeleteIfOrphaned {
-	return &DeleteIfOrphaned{store: store, pool: pool, outbox: outbox}
+func NewDeleteIfOrphaned(store deleteStore) *DeleteIfOrphaned {
+	return &DeleteIfOrphaned{store: store}
 }
 
 func (uc *DeleteIfOrphaned) DeleteIfOrphaned(ctx context.Context, repoID int64, hasSubscribers func(context.Context, int64) (bool, error)) error {
@@ -45,13 +36,6 @@ func (uc *DeleteIfOrphaned) DeleteIfOrphaned(ctx context.Context, repoID int64, 
 		}
 
 		return fmt.Errorf("delete orphaned repository %d: %w", repoID, err)
-	}
-
-	payload, err := json.Marshal(contract.RepoUntracked{RepoID: repoID})
-	if err == nil {
-		if err := uc.outbox.Insert(ctx, uc.pool, contract.SubjectRepoUntracked, payload); err != nil {
-			slog.Error("emit RepoUntracked", "repo_id", repoID, "error", err)
-		}
 	}
 
 	return nil
