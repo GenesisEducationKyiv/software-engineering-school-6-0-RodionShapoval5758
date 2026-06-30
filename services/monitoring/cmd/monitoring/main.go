@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"GithubReleaseNotificationAPI/contract"
+	"GithubReleaseNotificationAPI/services/monitoring/internal/catalogclient"
 	monconfig "GithubReleaseNotificationAPI/services/monitoring/internal/config"
 	"GithubReleaseNotificationAPI/services/monitoring/internal/db"
 	"GithubReleaseNotificationAPI/services/monitoring/internal/github"
@@ -25,10 +26,6 @@ import (
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/credentials/insecure"
 	"google.golang.org/grpc/keepalive"
-)
-
-const (
-	grpcListTrackedTimeout = 5 * time.Second
 )
 
 func main() {
@@ -103,7 +100,7 @@ func run() error {
 
 	githubClient := github.NewGithubClient(&http.Client{Timeout: 15 * time.Second}, &cfg.GithubToken)
 
-	catalogAdapter := &cursorCatalogAdapter{cursors: cursorStore, grpc: grpcClient}
+	catalogAdapter := catalogclient.New(cursorStore, grpcClient)
 	enqueuer := &releaseFoundEnqueuer{outbox: outboxStore}
 	worker := monitoring.NewWorker(githubClient, catalogAdapter, enqueuer, nil)
 
@@ -125,40 +122,6 @@ func run() error {
 	}
 
 	return nil
-}
-
-type cursorCatalogAdapter struct {
-	cursors *store.CursorStore
-	grpc    catalogv1.CatalogServiceClient
-}
-
-func (a *cursorCatalogAdapter) ListTracked(ctx context.Context) ([]monitoring.TrackedRepo, error) {
-	ctx, cancel := context.WithTimeout(ctx, grpcListTrackedTimeout)
-	defer cancel()
-
-	resp, err := a.grpc.ListTrackedRepos(ctx, &catalogv1.ListTrackedReposRequest{}, grpc.WaitForReady(true))
-	if err != nil {
-		return nil, fmt.Errorf("list tracked repos via grpc: %w", err)
-	}
-
-	repos := make([]monitoring.TrackedRepo, 0, len(resp.Repos))
-	for _, r := range resp.Repos {
-		tag, err := a.cursors.GetLastSeenTag(ctx, r.RepoId)
-		if err != nil {
-			return nil, err
-		}
-		repos = append(repos, monitoring.TrackedRepo{
-			ID:          r.RepoId,
-			FullName:    r.FullName,
-			LastSeenTag: tag,
-		})
-	}
-
-	return repos, nil
-}
-
-func (a *cursorCatalogAdapter) UpdateLastSeenTagAtomic(ctx context.Context, repoID int64, fullName, tag string, onTx func(context.Context, db.DBTX) error) error {
-	return a.cursors.UpdateLastSeenTagAtomic(ctx, repoID, fullName, tag, onTx)
 }
 
 type releaseFoundEnqueuer struct {
