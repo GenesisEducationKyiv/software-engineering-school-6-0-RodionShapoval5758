@@ -39,6 +39,8 @@ type IntegrationSuite struct {
 	router     http.Handler
 	githubFake *fakeGithubClient
 	grpcConn   *grpc.ClientConn
+	grpcSrv    *grpc.Server
+	bufLis     *bufconn.Listener
 }
 
 func (s *IntegrationSuite) SetupSuite() {
@@ -61,17 +63,17 @@ func (s *IntegrationSuite) SetupSuite() {
 	s.router = httpRouter.New(h, testAPIKey, m, noopPinger{}, noopPinger{})
 
 	const bufSize = 1024 * 1024
-	lis := bufconn.Listen(bufSize)
+	s.bufLis = bufconn.Listen(bufSize)
 
-	grpcSrv := grpc.NewServer()
+	s.grpcSrv = grpc.NewServer()
 	listTrackedUC := catalog.NewListTracked(testPool)
-	catalogv1.RegisterCatalogServiceServer(grpcSrv, grpchandler.NewCatalog(listTrackedUC))
+	catalogv1.RegisterCatalogServiceServer(s.grpcSrv, grpchandler.NewCatalog(listTrackedUC))
 
-	go func() { _ = grpcSrv.Serve(lis) }()
+	go func() { _ = s.grpcSrv.Serve(s.bufLis) }()
 
 	conn, err := grpc.NewClient("passthrough://bufnet",
 		grpc.WithContextDialer(func(ctx context.Context, _ string) (net.Conn, error) {
-			return lis.DialContext(ctx)
+			return s.bufLis.DialContext(ctx)
 		}),
 		grpc.WithTransportCredentials(insecure.NewCredentials()),
 	)
@@ -80,6 +82,9 @@ func (s *IntegrationSuite) SetupSuite() {
 }
 
 func (s *IntegrationSuite) TearDownSuite() {
+	if s.grpcSrv != nil {
+		s.grpcSrv.GracefulStop()
+	}
 	if s.grpcConn != nil {
 		_ = s.grpcConn.Close()
 	}
