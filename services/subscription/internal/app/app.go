@@ -100,7 +100,19 @@ func Build(cfg *config.Config) (*App, error) {
 	outboxRelay := outbox.NewRelay(dbPool, js, outboxStore)
 
 	subRepo := subscription.NewRepository(dbPool)
-	githubClient := github.NewGithubClient(&http.Client{Timeout: 15 * time.Second}, &cfg.GithubToken)
+	githubClient := github.NewGithubClient(&http.Client{
+		Timeout: 15 * time.Second,
+		Transport: &http.Transport{
+			DialContext: (&net.Dialer{
+				Timeout:   5 * time.Second,
+				KeepAlive: 30 * time.Second,
+			}).DialContext,
+			TLSHandshakeTimeout:   5 * time.Second,
+			ResponseHeaderTimeout: 10 * time.Second,
+			MaxIdleConnsPerHost:   10,
+			IdleConnTimeout:       90 * time.Second,
+		},
+	}, &cfg.GithubToken)
 
 	ensureUC := catalog.NewEnsure(dbPool)
 	deleteIfOrphanedUC := catalog.NewDeleteIfOrphaned(dbPool)
@@ -123,7 +135,7 @@ func Build(cfg *config.Config) (*App, error) {
 	grpcServer := grpc.NewServer()
 	catalogv1.RegisterCatalogServiceServer(grpcServer, handler.NewCatalog(listTrackedUC))
 
-	fanoutWorker := fanout.NewWorker(js, dbPool, &recipientListerAdapter{lister: listUC}, outboxStore)
+	fanoutWorker := fanout.NewWorker(js, dbPool, &recipientListerAdapter{lister: listUC}, outboxStore, fanout.NewRepoStore())
 	sagaConsumer := saga.NewConsumer(js, sagaOrchestrator)
 	sagaReaper := saga.NewReaper(dbPool, sagaStore, sagaOrchestrator)
 

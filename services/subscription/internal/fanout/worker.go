@@ -22,6 +22,10 @@ type outboxWriter interface {
 	Insert(ctx context.Context, q db.DBTX, subject string, payload []byte) error
 }
 
+type repoUpdater interface {
+	UpdateLastSeenTag(ctx context.Context, q db.DBTX, repoID int64, tag string) error
+}
+
 // DetectedRelease is the per-release data used by buildEvents.
 type DetectedRelease struct {
 	ReleaseTag  string
@@ -34,10 +38,11 @@ type Worker struct {
 	pool       *pgxpool.Pool
 	recipients recipientLister
 	outbox     outboxWriter
+	repos      repoUpdater
 }
 
-func NewWorker(js jetstream.JetStream, pool *pgxpool.Pool, recipients recipientLister, outbox outboxWriter) *Worker {
-	return &Worker{js: js, pool: pool, recipients: recipients, outbox: outbox}
+func NewWorker(js jetstream.JetStream, pool *pgxpool.Pool, recipients recipientLister, outbox outboxWriter, repos repoUpdater) *Worker {
+	return &Worker{js: js, pool: pool, recipients: recipients, outbox: outbox, repos: repos}
 }
 
 func (w *Worker) Run(ctx context.Context) error {
@@ -86,30 +91,32 @@ func (w *Worker) handleReleaseFound(ctx context.Context, msg jetstream.Msg) erro
 		return fmt.Errorf("fanout: list confirmed for repo_id=%d: %w", ev.RepoID, err)
 	}
 
-	if len(recs) == 0 {
-		return nil
-	}
-
-	dr := DetectedRelease{
-		ReleaseTag:  ev.ReleaseTag,
-		ReleaseName: ev.ReleaseName,
-		ReleaseURL:  ev.ReleaseURL,
-	}
-
-	payloads, err := buildEvents(dr, recs)
-	if err != nil {
-		return fmt.Errorf("fanout: build events: %w", err)
-	}
-
 	tx, err := w.pool.BeginTx(ctx, pgx.TxOptions{})
 	if err != nil {
 		return fmt.Errorf("fanout: begin tx: %w", err)
 	}
 	defer func() { _ = tx.Rollback(ctx) }()
 
-	for _, payload := range payloads {
-		if err := w.outbox.Insert(ctx, tx, contract.SubjectRelease, payload); err != nil {
-			return fmt.Errorf("fanout: insert outbox: %w", err)
+	if err := w.repos.UpdateLastSeenTag(ctx, tx, ev.RepoID, ev.ReleaseTag); err != nil {
+		return fmt.Errorf("fanout: update last_seen_tag: %w", err)
+	}
+
+	if len(recs) > 0 {
+		dr := DetectedRelease{
+			ReleaseTag:  ev.ReleaseTag,
+			ReleaseName: ev.ReleaseName,
+			ReleaseURL:  ev.ReleaseURL,
+		}
+
+		payloads, err := buildEvents(dr, recs)
+		if err != nil {
+			return fmt.Errorf("fanout: build events: %w", err)
+		}
+
+		for _, payload := range payloads {
+			if err := w.outbox.Insert(ctx, tx, contract.SubjectRelease, payload); err != nil {
+				return fmt.Errorf("fanout: insert outbox: %w", err)
+			}
 		}
 	}
 

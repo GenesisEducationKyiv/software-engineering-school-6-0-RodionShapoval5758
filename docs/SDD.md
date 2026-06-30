@@ -44,12 +44,14 @@ The system evolved from a monolith into three bounded services in four phases:
 Three services, one nginx edge, one NATS broker, one PostgreSQL instance:
 
 ```mermaid
-flowchart LR
-    Client[Client]
-    nginx[nginx]
+flowchart TB
+    Client[Client] -->|HTTP| nginx[nginx]
+    nginx -->|proxy /api/| HTTP
 
     subgraph subscription["Subscription Service"]
+        direction TB
         HTTP[HTTP Server]
+        GRPC[gRPC Server]
         FW[Fanout Consumer]
         Relay1[Outbox Relay]
         SagaCons[Saga Consumer]
@@ -57,43 +59,63 @@ flowchart LR
     end
 
     subgraph monitoring["Monitoring Service (replicas=1)"]
+        direction TB
         Scanner[GitHub Scanner]
         Relay2[Outbox Relay]
     end
 
     subgraph notification["Notification Service"]
+        direction TB
         NotifConsumer[NATS Consumer]
         Mailer[Mailer]
     end
 
-    DB[(PostgreSQL)]
+    subgraph subcore["Subscription Core Tables"]
+        direction LR
+        repos[(repositories)]
+        subs[(subscriptions)]
+    end
+
+    subgraph subasync["Subscription Async Tables"]
+        direction LR
+        outboxt[(outbox)]
+        sagas[(subscribe_sagas)]
+    end
+
+    subgraph mondb["Monitoring Tables"]
+        direction LR
+        cursors[(scan_cursors)]
+        monoutbox[(monitoring_outbox)]
+    end
+
     NATS((NATS JetStream))
     GitHub[GitHub API]
     SMTP[SMTP]
 
-    Client -->|HTTP| nginx
-    nginx -->|proxy /api/| HTTP
+    %% Subscription service → its tables
+    HTTP --> repos & subs & outboxt & sagas
+    GRPC --> repos
+    FW --> subs & outboxt & repos
+    Relay1 --> outboxt
+    SagaCons --> sagas & subs
+    SagaReaper --> sagas & subs
 
-    HTTP -->|SQL| DB
-    Relay1 -->|SQL| DB
-    FW -->|SQL| DB
-    SagaCons -->|SQL| DB
-    SagaReaper -->|SQL| DB
-
-    Scanner -->|SQL| DB
-    Relay2 -->|SQL| DB
+    %% Monitoring service → its tables + external
+    Scanner --> cursors & monoutbox
+    Relay2 --> monoutbox
     Scanner -->|REST| GitHub
-    Scanner -->|gRPC ListTrackedRepos| HTTP
+    Scanner -->|gRPC ListTrackedRepos| GRPC
 
+    %% NATS event bus
     Relay1 -->|publish| NATS
     Relay2 -->|publish| NATS
     NATS -->|ReleaseFound| FW
-    NATS -->|ConfirmationRequested/ReleaseDetected| NotifConsumer
-    NATS -->|EmailSent/EmailFailed| SagaCons
+    NATS -->|ConfirmationRequested / ReleaseDetected| NotifConsumer
+    NATS -->|EmailSent / EmailFailed| SagaCons
 
-    NotifConsumer --> Mailer
-    Mailer -->|Email| SMTP
-    NotifConsumer -->|EmailSent/EmailFailed| NATS
+    %% Notification service
+    NotifConsumer --> Mailer -->|Email| SMTP
+    NotifConsumer -->|EmailSent / EmailFailed| NATS
 ```
 
 ### NATS Streams

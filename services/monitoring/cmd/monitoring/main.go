@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"log/slog"
+	"net"
 	"net/http"
 	"os"
 	"os/signal"
@@ -98,7 +99,19 @@ func run() error {
 
 	grpcClient := catalogv1.NewCatalogServiceClient(conn)
 
-	githubClient := github.NewGithubClient(&http.Client{Timeout: 15 * time.Second}, &cfg.GithubToken)
+	githubClient := github.NewGithubClient(&http.Client{
+		Timeout: 15 * time.Second,
+		Transport: &http.Transport{
+			DialContext: (&net.Dialer{
+				Timeout:   5 * time.Second,
+				KeepAlive: 30 * time.Second,
+			}).DialContext,
+			TLSHandshakeTimeout:   5 * time.Second,
+			ResponseHeaderTimeout: 10 * time.Second,
+			MaxIdleConnsPerHost:   10,
+			IdleConnTimeout:       90 * time.Second,
+		},
+	}, &cfg.GithubToken)
 
 	catalogAdapter := catalogclient.New(cursorStore, grpcClient)
 	enqueuer := &releaseFoundEnqueuer{outbox: outboxStore}
