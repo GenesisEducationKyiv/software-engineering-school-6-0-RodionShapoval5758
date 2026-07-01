@@ -48,6 +48,8 @@ jobs:
       - name: Install Playwright and dependencies
         working-directory: frontend
         run: npm ci && npx playwright install --with-deps chromium
+      - name: Generate mTLS certs
+        run: ./build/certs/gen.sh
       - name: Start stack
         run: API_KEY=test-api-key docker compose up -d --wait --build
       - name: Run e2e tests
@@ -76,6 +78,8 @@ jobs:
         with:
           version: 3.x
           repo-token: ${{ secrets.GITHUB_TOKEN }}
+      - name: Generate mTLS certs
+        run: task certs-gen
       - name: Start stack
         run: API_KEY=test-api-key docker compose up -d --wait --build
       - name: Run smoke test
