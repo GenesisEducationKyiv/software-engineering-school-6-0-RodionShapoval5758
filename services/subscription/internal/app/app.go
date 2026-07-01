@@ -30,6 +30,7 @@ import (
 	"github.com/nats-io/nats.go/jetstream"
 	"github.com/prometheus/client_golang/prometheus"
 	"google.golang.org/grpc"
+	"google.golang.org/grpc/credentials"
 )
 
 type App struct {
@@ -47,6 +48,11 @@ type App struct {
 func Build(cfg *config.Config) (*App, error) {
 	initCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
+
+	grpcTLSConfig, err := newGRPCServerTLSConfig(cfg)
+	if err != nil {
+		return nil, fmt.Errorf("grpc tls config: %w", err)
+	}
 
 	if err := db.RunMigrations(cfg.DatabaseURL); err != nil {
 		return nil, err
@@ -132,7 +138,7 @@ func Build(cfg *config.Config) (*App, error) {
 	chiRouter := httpRouter.New(httpHandler, cfg.ApiKey, appMetrics, &dbPinger{dbPool}, &natsPinger{nc})
 
 	listTrackedUC := catalog.NewListTracked(dbPool)
-	grpcServer := grpc.NewServer()
+	grpcServer := grpc.NewServer(grpc.Creds(credentials.NewTLS(grpcTLSConfig)))
 	catalogv1.RegisterCatalogServiceServer(grpcServer, handler.NewCatalog(listTrackedUC))
 
 	fanoutWorker := fanout.NewWorker(js, dbPool, &recipientListerAdapter{lister: listUC}, outboxStore, fanout.NewRepoStore())
