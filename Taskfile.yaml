@@ -16,6 +16,10 @@ tasks:
 
   certs-gen:
     desc: Generate the private CA and mTLS leaf certs for the gRPC link
+    status:
+      - test -f certs/ca.crt
+      - test -f certs/subscription.crt
+      - test -f certs/monitoring.crt
     cmds:
       - ./build/certs/gen.sh
 
@@ -26,6 +30,7 @@ tasks:
 
   up-core:
     desc: Start core services
+    deps: [certs-gen]
     cmds:
       - '{{.COMPOSE}} up -d --wait'
 
@@ -41,6 +46,7 @@ tasks:
 
   up-full:
     desc: Start core + metrics + logging profiles
+    deps: [certs-gen]
     cmds:
       - '{{.COMPOSE}} --profile metrics --profile logging up -d --wait'
       - task: observability-setup
@@ -74,6 +80,7 @@ tasks:
 
   test-e2e:
     desc: Spin up stack, run Playwright tests, tear down
+    deps: [certs-gen]
     cmds:
       - 'API_KEY=test-api-key {{.COMPOSE}} up -d --wait --build'
       - cd frontend && API_KEY=test-api-key npx playwright test
