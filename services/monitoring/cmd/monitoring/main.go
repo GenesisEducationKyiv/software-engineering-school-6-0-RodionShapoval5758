@@ -25,7 +25,7 @@ import (
 	natsgo "github.com/nats-io/nats.go"
 	"github.com/nats-io/nats.go/jetstream"
 	"google.golang.org/grpc"
-	"google.golang.org/grpc/credentials/insecure"
+	"google.golang.org/grpc/credentials"
 	"google.golang.org/grpc/keepalive"
 )
 
@@ -44,6 +44,11 @@ func run() error {
 	cfg, err := monconfig.Load()
 	if err != nil {
 		return err
+	}
+
+	grpcTLSConfig, err := newGRPCClientTLSConfig(cfg)
+	if err != nil {
+		return fmt.Errorf("grpc tls config: %w", err)
 	}
 
 	initCtx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
@@ -73,7 +78,7 @@ func run() error {
 
 	conn, err := grpc.NewClient(
 		cfg.SubscriptionGRPCAddr,
-		grpc.WithTransportCredentials(insecure.NewCredentials()),
+		grpc.WithTransportCredentials(credentials.NewTLS(grpcTLSConfig)),
 		grpc.WithKeepaliveParams(keepalive.ClientParameters{
 			Time:                10 * time.Second,
 			Timeout:             5 * time.Second,
