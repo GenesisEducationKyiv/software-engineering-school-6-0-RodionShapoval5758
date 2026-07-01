@@ -10,11 +10,14 @@ import (
 )
 
 var (
-	ErrMissingDatabaseURL = errors.New("DATABASE_URL is required")
-	ErrInvalidPortFormat  = errors.New("PORT must be a valid integer")
-	ErrInvalidPort        = errors.New("PORT must be a valid TCP port (1-65535)")
-	ErrInvalidGRPCPort    = errors.New("GRPC_PORT must be a valid TCP port (1-65535)")
-	ErrInvalidGRPCPortFmt = errors.New("GRPC_PORT must be a valid integer")
+	ErrMissingDatabaseURL   = errors.New("DATABASE_URL is required")
+	ErrInvalidPortFormat    = errors.New("PORT must be a valid integer")
+	ErrInvalidPort          = errors.New("PORT must be a valid TCP port (1-65535)")
+	ErrInvalidGRPCPort      = errors.New("GRPC_PORT must be a valid TCP port (1-65535)")
+	ErrInvalidGRPCPortFmt   = errors.New("GRPC_PORT must be a valid integer")
+	ErrMissingGRPCTLSCACert = errors.New("GRPC_TLS_CA_CERT is required")
+	ErrMissingGRPCTLSCert   = errors.New("GRPC_TLS_CERT is required")
+	ErrMissingGRPCTLSKey    = errors.New("GRPC_TLS_KEY is required")
 )
 
 type Config struct {
@@ -25,6 +28,9 @@ type Config struct {
 	NATSUrl        string
 	ApiKey         string
 	SagaConfirmTTL time.Duration
+	GRPCTLSCACert  string
+	GRPCTLSCert    string
+	GRPCTLSKey     string
 }
 
 func Load() (*Config, error) {
@@ -55,6 +61,9 @@ func loadFromEnv() *Config {
 		NATSUrl:        os.Getenv("NATS_URL"),
 		ApiKey:         os.Getenv("API_KEY"),
 		SagaConfirmTTL: ttl,
+		GRPCTLSCACert:  os.Getenv("GRPC_TLS_CA_CERT"),
+		GRPCTLSCert:    os.Getenv("GRPC_TLS_CERT"),
+		GRPCTLSKey:     os.Getenv("GRPC_TLS_KEY"),
 	}
 }
 
@@ -91,6 +100,16 @@ func (cfg *Config) validate() error {
 	}
 	if grpcPort <= 0 || grpcPort > 65535 {
 		return ErrInvalidGRPCPort
+	}
+
+	if cfg.GRPCTLSCACert == "" {
+		return ErrMissingGRPCTLSCACert
+	}
+	if cfg.GRPCTLSCert == "" {
+		return ErrMissingGRPCTLSCert
+	}
+	if cfg.GRPCTLSKey == "" {
+		return ErrMissingGRPCTLSKey
 	}
 
 	return nil
