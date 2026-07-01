@@ -14,6 +14,11 @@ tasks:
     cmds:
       - buf generate
 
+  certs-gen:
+    desc: Generate the private CA and mTLS leaf certs for the gRPC link
+    cmds:
+      - ./build/certs/gen.sh
+
   build:
     desc: Build images
     cmds:
