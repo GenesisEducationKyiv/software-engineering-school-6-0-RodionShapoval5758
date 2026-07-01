@@ -34,6 +34,10 @@ gen_leaf() {
 
   echo "generating ${name} leaf cert"
   openssl genrsa -out "${name}.key" 2048
+  # Leaf keys are read inside containers by a non-root user (e.g. "app") that
+  # doesn't match the host file owner, so they need to be world-readable.
+  # ca.key never leaves the host and stays at its default restrictive mode.
+  chmod 644 "${name}.key"
   openssl req -new -key "${name}.key" -subj "/CN=${name}" -out "${name}.csr"
   openssl x509 -req -in "${name}.csr" -CA ca.crt -CAkey ca.key -CAcreateserial \
     -days 90 -sha256 \
