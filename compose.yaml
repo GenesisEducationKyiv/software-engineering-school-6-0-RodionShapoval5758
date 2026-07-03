@@ -53,7 +53,9 @@ services:
     labels:
       filebeat_collect: "true"
     volumes:
-      - ./certs:/certs:ro
+      - ./certs/ca.crt:/certs/ca.crt:ro
+      - ./certs/subscription.crt:/certs/subscription.crt:ro
+      - ./certs/subscription.key:/certs/subscription.key:ro
     environment:
       PORT: "8080"
       GRPC_PORT: "50051"
@@ -84,7 +86,9 @@ services:
       nats:
         condition: service_healthy
     volumes:
-      - ./certs:/certs:ro
+      - ./certs/ca.crt:/certs/ca.crt:ro
+      - ./certs/monitoring.crt:/certs/monitoring.crt:ro
+      - ./certs/monitoring.key:/certs/monitoring.key:ro
     environment:
       DATABASE_URL: postgres://postgres:password@postgres_db:5432/github_release_notifications?sslmode=disable
       GITHUB_TOKEN: ${GITHUB_TOKEN}
