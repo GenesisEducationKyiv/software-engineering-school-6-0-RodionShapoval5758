@@ -115,3 +115,9 @@ jobs:
           version: v2.11.4
           args: --config=.golangci.yaml ./services/notification/...
           working-directory: .
+      - name: Lint auth service
+        uses: golangci/golangci-lint-action@v9
+        with:
+          version: v2.11.4
+          args: --config=.golangci.yaml ./services/auth/...
+          working-directory: .
