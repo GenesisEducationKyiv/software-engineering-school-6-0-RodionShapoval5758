@@ -46,7 +46,18 @@ gen_leaf() {
   rm -f "${name}.csr"
 }
 
-gen_leaf "subscription" "serverAuth" "subjectAltName=DNS:subscription,DNS:localhost,IP:127.0.0.1"
+# subscription both serves CatalogService and dials AuthService, so it needs
+# both EKUs on one leaf.
+gen_leaf "subscription" "serverAuth,clientAuth" "subjectAltName=DNS:subscription,DNS:localhost,IP:127.0.0.1"
 gen_leaf "monitoring" "clientAuth" "subjectAltName=DNS:monitoring"
+gen_leaf "auth" "serverAuth" "subjectAltName=DNS:auth,DNS:localhost,IP:127.0.0.1"
+
+if [[ -f jwt-signing.key && "${FORCE}" -eq 0 ]]; then
+  echo "certs/jwt-signing.key already exists, reusing"
+else
+  echo "generating JWT signing key (ES256)"
+  openssl ecparam -genkey -name prime256v1 -noout -out jwt-signing.key
+  chmod 644 jwt-signing.key
+fi
 
 echo "done. certs written to ${out_dir}"
