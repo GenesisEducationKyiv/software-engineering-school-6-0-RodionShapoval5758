@@ -10,16 +10,18 @@ vars:
 tasks:
   proto:
     desc: Generate protobuf and gRPC code
-    dir: services/subscription/api
     cmds:
-      - buf generate
+      - cd services/subscription/api && buf generate
+      - cd services/auth/api && buf generate
 
   certs-gen:
-    desc: Generate the private CA and mTLS leaf certs for the gRPC link
+    desc: Generate the private CA, mTLS leaf certs, and JWT signing key
     status:
       - test -f certs/ca.crt
       - test -f certs/subscription.crt
       - test -f certs/monitoring.crt
+      - test -f certs/auth.crt
+      - test -f certs/jwt-signing.key
     cmds:
       - ./build/certs/gen.sh
 
