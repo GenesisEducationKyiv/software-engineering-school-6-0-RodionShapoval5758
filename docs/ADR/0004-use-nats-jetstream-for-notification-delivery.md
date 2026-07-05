@@ -4,7 +4,7 @@
 Rodion Shapoval
 
 ## Status
-Accepted
+Accepted (amended) — notification delivery via `NOTIFICATIONS` unchanged; the `TRACKING` stream and tracking coordination described below were later replaced by a gRPC pull, see [ADR-0005](0005-pull-tracked-repositories-via-grpc.md)
 
 ## Context
 The original implementation sent confirmation and release notification emails synchronously inside the monolith. This tied email delivery latency and failure to the HTTP response and the scan loop.
@@ -29,6 +29,8 @@ Each publish includes a stable `Msg-Id` header for server-side deduplication wit
 The Notification service uses explicit acknowledgment: ACK on success, NAK on transient SMTP failure (triggers redelivery), Term on unmarshal failure (message dropped to `NOTIFICATIONS_DLQ`).
 
 All event definitions live in the shared `services/contract` Go module.
+
+**Amendment:** The `TRACKING` stream, `RepoTracked`/`RepoUntracked` events, and Monitoring's tracking consumer were removed. Monitoring now discovers tracked repos via a synchronous gRPC call to Subscription's catalog service instead — see [ADR-0005](0005-pull-tracked-repositories-via-grpc.md) for why the "Direct gRPC calls between services" rejection below no longer applied to this specific call site.
 
 ## Consequences
 ### Positive
