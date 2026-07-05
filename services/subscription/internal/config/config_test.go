@@ -14,6 +14,7 @@ func TestLoadAppliesDefaults(t *testing.T) {
 	t.Setenv("GRPC_TLS_CA_CERT", "ca.crt")
 	t.Setenv("GRPC_TLS_CERT", "server.crt")
 	t.Setenv("GRPC_TLS_KEY", "server.key")
+	t.Setenv("AUTH_GRPC_ADDR", "auth:50051")
 
 	cfg, err := Load()
 	require.NoError(t, err)
@@ -58,6 +59,7 @@ func TestLoadValidation(t *testing.T) {
 				"GRPC_TLS_CA_CERT": "ca.crt",
 				"GRPC_TLS_CERT":    "server.crt",
 				"GRPC_TLS_KEY":     "server.key",
+				"AUTH_GRPC_ADDR":   "auth:50051",
 			},
 		},
 	}
@@ -88,7 +90,7 @@ func clearConfigEnv(t *testing.T) {
 		"PORT",
 		"GITHUB_TOKEN",
 		"NATS_URL",
-		"API_KEY",
+		"AUTH_GRPC_ADDR",
 		"GRPC_TLS_CA_CERT",
 		"GRPC_TLS_CERT",
 		"GRPC_TLS_KEY",

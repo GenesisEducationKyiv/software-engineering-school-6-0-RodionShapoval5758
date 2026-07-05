@@ -23,7 +23,7 @@ func (s *IntegrationSuite) TestAuth_MissingHeader() {
 	}
 }
 
-func (s *IntegrationSuite) TestAuth_WrongKey() {
+func (s *IntegrationSuite) TestAuth_InvalidToken() {
 	cases := []struct {
 		method string
 		path   string
@@ -34,7 +34,7 @@ func (s *IntegrationSuite) TestAuth_WrongKey() {
 
 	for _, tc := range cases {
 		s.Run(tc.method+" "+tc.path, func() {
-			w := s.doWithAuth(tc.method, tc.path, nil, "Bearer wrong-key")
+			w := s.doWithAuth(tc.method, tc.path, nil, "Bearer not-a-valid-jwt")
 			s.Equal(http.StatusUnauthorized, w.Code)
 		})
 	}

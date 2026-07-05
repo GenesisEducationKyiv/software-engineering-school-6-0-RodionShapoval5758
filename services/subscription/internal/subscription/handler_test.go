@@ -19,7 +19,7 @@ type subscriptionResp struct {
 func (s *HandlerTestSuite) TestSubscribe_JSONHappyPath() {
 	s.sub.On("Execute", mock.Anything, "user@example.com", "owner/repo").Return(nil)
 
-	rec := s.performRequest(http.MethodPost, "/api/subscribe", `{"email":"user@example.com","repo":"owner/repo"}`, "application/json")
+	rec := s.performAuthedRequest(http.MethodPost, "/api/subscribe", `{"repo":"owner/repo"}`, "application/json")
 
 	var response map[string]string
 	s.requireJSONResponse(rec, http.StatusOK, &response)
@@ -30,11 +30,19 @@ func (s *HandlerTestSuite) TestSubscribe_JSONHappyPath() {
 func (s *HandlerTestSuite) TestSubscribe_FormHappyPath() {
 	s.sub.On("Execute", mock.Anything, "user@example.com", "owner/repo").Return(nil)
 
-	rec := s.performRequest(http.MethodPost, "/api/subscribe", "email=user%40example.com&repo=owner%2Frepo", "application/x-www-form-urlencoded")
+	rec := s.performAuthedRequest(http.MethodPost, "/api/subscribe", "repo=owner%2Frepo", "application/x-www-form-urlencoded")
 
 	var response map[string]string
 	s.requireJSONResponse(rec, http.StatusOK, &response)
 	s.Equal("Subscription successful. Confirmation email sent", response["message"])
+	s.assertExpectations()
+}
+
+func (s *HandlerTestSuite) TestSubscribe_Unauthorized() {
+	rec := s.performRequest(http.MethodPost, "/api/subscribe", `{"repo":"owner/repo"}`, "application/json")
+
+	s.Equal(http.StatusUnauthorized, rec.Code)
+	s.sub.AssertNotCalled(s.T(), "Execute", mock.Anything, mock.Anything, mock.Anything)
 	s.assertExpectations()
 }
 
@@ -44,15 +52,14 @@ func (s *HandlerTestSuite) TestSubscribe_BadRequestBeforeService() {
 		body        string
 		contentType string
 	}{
-		{"malformed json", `{"email":"user@example.com","repo":`, "application/json"},
-		{"empty email", `{"email":"","repo":"owner/repo"}`, "application/json"},
-		{"empty repo", `{"email":"user@example.com","repo":""}`, "application/json"},
+		{"malformed json", `{"repo":`, "application/json"},
+		{"empty repo", `{"repo":""}`, "application/json"},
 	}
 
 	for _, tc := range cases {
 		s.Run(tc.name, func() {
 			s.SetupTest()
-			rec := s.performRequest(http.MethodPost, "/api/subscribe", tc.body, tc.contentType)
+			rec := s.performAuthedRequest(http.MethodPost, "/api/subscribe", tc.body, tc.contentType)
 			s.requireErrorResponse(rec, http.StatusBadRequest)
 			s.sub.AssertNotCalled(s.T(), "Execute", mock.Anything, mock.Anything, mock.Anything)
 			s.assertExpectations()
@@ -80,7 +87,7 @@ func (s *HandlerTestSuite) TestSubscribe_ServiceErrors() {
 			s.SetupTest()
 			s.sub.On("Execute", mock.Anything, "user@example.com", "owner/repo").Return(tc.err)
 
-			rec := s.performRequest(http.MethodPost, "/api/subscribe", `{"email":"user@example.com","repo":"owner/repo"}`, "application/json")
+			rec := s.performAuthedRequest(http.MethodPost, "/api/subscribe", `{"repo":"owner/repo"}`, "application/json")
 
 			s.requireErrorResponse(rec, tc.wantStatus)
 			s.assertExpectations()
@@ -171,7 +178,7 @@ func (s *HandlerTestSuite) TestListSubscriptions_HappyPath() {
 	}
 	s.list.On("ByEmail", mock.Anything, "user@example.com").Return(subs, nil)
 
-	rec := s.performRequest(http.MethodGet, "/api/subscriptions?email=user%40example.com", "", "")
+	rec := s.performAuthedRequest(http.MethodGet, "/api/subscriptions", "", "")
 
 	var response []subscriptionResp
 	s.requireJSONResponse(rec, http.StatusOK, &response)
@@ -184,10 +191,10 @@ func (s *HandlerTestSuite) TestListSubscriptions_HappyPath() {
 	s.assertExpectations()
 }
 
-func (s *HandlerTestSuite) TestListSubscriptions_MissingEmail() {
+func (s *HandlerTestSuite) TestListSubscriptions_Unauthorized() {
 	rec := s.performRequest(http.MethodGet, "/api/subscriptions", "", "")
 
-	s.requireErrorResponse(rec, http.StatusBadRequest)
+	s.Equal(http.StatusUnauthorized, rec.Code)
 	s.list.AssertNotCalled(s.T(), "ByEmail", mock.Anything, mock.Anything)
 	s.assertExpectations()
 }
@@ -195,7 +202,7 @@ func (s *HandlerTestSuite) TestListSubscriptions_MissingEmail() {
 func (s *HandlerTestSuite) TestListSubscriptions_EmptyList() {
 	s.list.On("ByEmail", mock.Anything, "user@example.com").Return([]subscription.SubscriptionDetails{}, nil)
 
-	rec := s.performRequest(http.MethodGet, "/api/subscriptions?email=user%40example.com", "", "")
+	rec := s.performAuthedRequest(http.MethodGet, "/api/subscriptions", "", "")
 
 	var response []subscriptionResp
 	s.requireJSONResponse(rec, http.StatusOK, &response)
@@ -219,7 +226,7 @@ func (s *HandlerTestSuite) TestListSubscriptions_ServiceErrors() {
 			s.SetupTest()
 			s.list.On("ByEmail", mock.Anything, "user@example.com").Return(nil, tc.err)
 
-			rec := s.performRequest(http.MethodGet, "/api/subscriptions?email=user%40example.com", "", "")
+			rec := s.performAuthedRequest(http.MethodGet, "/api/subscriptions", "", "")
 
 			s.requireErrorResponse(rec, tc.wantStatus)
 			s.assertExpectations()
