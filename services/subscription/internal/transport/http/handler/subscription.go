@@ -47,8 +47,7 @@ func New(sub subscriber, conf confirmer, unsub unsubscriber, list lister) *Handl
 }
 
 type subscriptionRequest struct {
-	Email string `json:"email"`
-	Repo  string `json:"repo"`
+	Repo string `json:"repo"`
 }
 
 type subscriptionResponse struct {
@@ -78,6 +77,13 @@ func toResponseSlice(details []subscription.SubscriptionDetails) []subscriptionR
 }
 
 func (h *Handler) Subscribe(w http.ResponseWriter, r *http.Request) {
+	email := middleware.EmailFromContext(r.Context())
+	if email == "" {
+		respond.Error(w, http.StatusUnauthorized, "Not authorized")
+
+		return
+	}
+
 	req, err := decodeSubscriptionRequest(r)
 	if err != nil {
 		respond.Error(w, http.StatusBadRequest, err.Error())
@@ -85,13 +91,13 @@ func (h *Handler) Subscribe(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if err := requireNonEmptySubscriptionFields(req.Email, req.Repo); err != nil {
-		respond.Error(w, http.StatusBadRequest, err.Error())
+	if req.Repo == "" {
+		respond.Error(w, http.StatusBadRequest, "repo is required")
 
 		return
 	}
 
-	if err := h.subscriber.Execute(r.Context(), req.Email, req.Repo); err != nil {
+	if err := h.subscriber.Execute(r.Context(), email, req.Repo); err != nil {
 		handleError(w, r, err)
 
 		return
@@ -143,10 +149,9 @@ func (h *Handler) Unsubscribe(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *Handler) ListSubscriptions(w http.ResponseWriter, r *http.Request) {
-	email := r.URL.Query().Get("email")
-
-	if err := requireNonEmptyEmail(email); err != nil {
-		respond.Error(w, http.StatusBadRequest, err.Error())
+	email := middleware.EmailFromContext(r.Context())
+	if email == "" {
+		respond.Error(w, http.StatusUnauthorized, "Not authorized")
 
 		return
 	}
@@ -159,10 +164,6 @@ func (h *Handler) ListSubscriptions(w http.ResponseWriter, r *http.Request) {
 	}
 
 	respond.JSON(w, http.StatusOK, toResponseSlice(details))
-}
-
-func (h *Handler) ValidateAPIKey(w http.ResponseWriter, _ *http.Request) {
-	w.WriteHeader(http.StatusOK)
 }
 
 func decodeSubscriptionRequest(r *http.Request) (subscriptionRequest, error) {
@@ -182,34 +183,13 @@ func decodeSubscriptionRequest(r *http.Request) (subscriptionRequest, error) {
 	}
 
 	return subscriptionRequest{
-		Email: r.Form.Get("email"),
-		Repo:  r.Form.Get("repo"),
+		Repo: r.Form.Get("repo"),
 	}, nil
-}
-
-func requireNonEmptySubscriptionFields(email, repo string) error {
-	if email == "" {
-		return errors.New("email is required")
-	}
-
-	if repo == "" {
-		return errors.New("repo is required")
-	}
-
-	return nil
 }
 
 func requireToken(token string, minLen int) error {
 	if len(token) < minLen {
 		return errors.New("invalid token")
-	}
-
-	return nil
-}
-
-func requireNonEmptyEmail(email string) error {
-	if email == "" {
-		return errors.New("email is required")
 	}
 
 	return nil

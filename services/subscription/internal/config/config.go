@@ -18,6 +18,7 @@ var (
 	ErrMissingGRPCTLSCACert = errors.New("GRPC_TLS_CA_CERT is required")
 	ErrMissingGRPCTLSCert   = errors.New("GRPC_TLS_CERT is required")
 	ErrMissingGRPCTLSKey    = errors.New("GRPC_TLS_KEY is required")
+	ErrMissingAuthGRPCAddr  = errors.New("AUTH_GRPC_ADDR is required")
 )
 
 type Config struct {
@@ -26,7 +27,7 @@ type Config struct {
 	GRPCPort       string
 	GithubToken    string
 	NATSUrl        string
-	ApiKey         string
+	AuthGRPCAddr   string
 	SagaConfirmTTL time.Duration
 	GRPCTLSCACert  string
 	GRPCTLSCert    string
@@ -59,7 +60,7 @@ func loadFromEnv() *Config {
 		GRPCPort:       os.Getenv("GRPC_PORT"),
 		GithubToken:    os.Getenv("GITHUB_TOKEN"),
 		NATSUrl:        os.Getenv("NATS_URL"),
-		ApiKey:         os.Getenv("API_KEY"),
+		AuthGRPCAddr:   os.Getenv("AUTH_GRPC_ADDR"),
 		SagaConfirmTTL: ttl,
 		GRPCTLSCACert:  os.Getenv("GRPC_TLS_CA_CERT"),
 		GRPCTLSCert:    os.Getenv("GRPC_TLS_CERT"),
@@ -110,6 +111,9 @@ func (cfg *Config) validate() error {
 	}
 	if cfg.GRPCTLSKey == "" {
 		return ErrMissingGRPCTLSKey
+	}
+	if cfg.AuthGRPCAddr == "" {
+		return ErrMissingAuthGRPCAddr
 	}
 
 	return nil

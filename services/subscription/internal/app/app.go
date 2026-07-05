@@ -10,7 +10,9 @@ import (
 	"time"
 
 	"GithubReleaseNotificationAPI/contract"
+	authv1 "GithubReleaseNotificationAPI/services/auth/api/gen/authv1/auth/v1"
 	catalogv1 "GithubReleaseNotificationAPI/services/subscription/api/gen/catalogv1/catalog/v1"
+	"GithubReleaseNotificationAPI/services/subscription/internal/authclient"
 	"GithubReleaseNotificationAPI/services/subscription/internal/catalog"
 	"GithubReleaseNotificationAPI/services/subscription/internal/config"
 	"GithubReleaseNotificationAPI/services/subscription/internal/db"
@@ -43,6 +45,8 @@ type App struct {
 	appMetrics *metrics.Metrics
 	dbPool     *pgxpool.Pool
 	nc         *natsgo.Conn
+	authKeys   *authclient.Client
+	authConn   *grpc.ClientConn
 }
 
 func Build(cfg *config.Config) (*App, error) {
@@ -53,6 +57,21 @@ func Build(cfg *config.Config) (*App, error) {
 	if err != nil {
 		return nil, fmt.Errorf("grpc tls config: %w", err)
 	}
+
+	grpcClientTLSConfig, err := newGRPCClientTLSConfig(cfg)
+	if err != nil {
+		return nil, fmt.Errorf("grpc client tls config: %w", err)
+	}
+
+	authConn, err := grpc.NewClient(
+		cfg.AuthGRPCAddr,
+		grpc.WithTransportCredentials(credentials.NewTLS(grpcClientTLSConfig)),
+	)
+	if err != nil {
+		return nil, fmt.Errorf("connect to auth grpc: %w", err)
+	}
+
+	authKeys := authclient.New(authv1.NewAuthServiceClient(authConn))
 
 	if err := db.RunMigrations(cfg.DatabaseURL); err != nil {
 		return nil, err
@@ -135,7 +154,7 @@ func Build(cfg *config.Config) (*App, error) {
 	appMetrics := metrics.New(reg)
 
 	httpHandler := httphandler.New(subscribeUC, confirmUC, unsubscribeUC, listUC)
-	chiRouter := httpRouter.New(httpHandler, cfg.ApiKey, appMetrics, &dbPinger{dbPool}, &natsPinger{nc})
+	chiRouter := httpRouter.New(httpHandler, authKeys, appMetrics, &dbPinger{dbPool}, &natsPinger{nc})
 
 	listTrackedUC := catalog.NewListTracked(dbPool)
 	grpcServer := grpc.NewServer(grpc.Creds(credentials.NewTLS(grpcTLSConfig)))
@@ -155,12 +174,19 @@ func Build(cfg *config.Config) (*App, error) {
 		appMetrics: appMetrics,
 		dbPool:     dbPool,
 		nc:         nc,
+		authKeys:   authKeys,
+		authConn:   authConn,
 	}, nil
 }
 
 func (a *App) Serve(ctx context.Context, grpcPort string) error {
 	defer a.dbPool.Close()
 	defer func() { _ = a.nc.Drain() }()
+	defer func() { _ = a.authConn.Close() }()
+
+	if err := a.authKeys.Load(ctx); err != nil {
+		return fmt.Errorf("load auth signing key: %w", err)
+	}
 
 	grpcLis, err := net.Listen("tcp", ":"+grpcPort)
 	if err != nil {
@@ -184,6 +210,7 @@ func (a *App) Serve(ctx context.Context, grpcPort string) error {
 		}
 	}()
 
+	go a.authKeys.Run(ctx)
 	go a.appMetrics.CollectDBStats(ctx, a.dbPool, 15*time.Second)
 	go a.relay.Run(ctx)
 	go func() {
