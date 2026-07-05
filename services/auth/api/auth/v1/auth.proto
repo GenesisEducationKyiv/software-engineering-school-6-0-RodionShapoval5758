@@ -1,0 +1,17 @@
+syntax = "proto3";
+
+package auth.v1;
+
+option go_package = "GithubReleaseNotificationAPI/services/auth/api/gen/authv1/auth/v1";
+
+service AuthService {
+  rpc GetSigningKey(GetSigningKeyRequest) returns (GetSigningKeyResponse);
+}
+
+message GetSigningKeyRequest {}
+
+message GetSigningKeyResponse {
+  string kid            = 1;
+  bytes  public_key_pem = 2;
+  string algorithm      = 3;
+}
