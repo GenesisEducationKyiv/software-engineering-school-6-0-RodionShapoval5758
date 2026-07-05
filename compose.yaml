@@ -33,8 +33,45 @@ services:
         condition: service_healthy
       notification:
         condition: service_started
+      auth:
+        condition: service_healthy
     ports:
       - "80:80"
+
+  auth:
+    build:
+      context: .
+      dockerfile: build/auth.Dockerfile
+    container_name: github-release-notification-auth
+    restart: unless-stopped
+    logging: *default-logging
+    depends_on:
+      postgres_auth_db:
+        condition: service_healthy
+      nats:
+        condition: service_healthy
+    labels:
+      filebeat_collect: "true"
+    volumes:
+      - ./certs/ca.crt:/certs/ca.crt:ro
+      - ./certs/auth.crt:/certs/auth.crt:ro
+      - ./certs/auth.key:/certs/auth.key:ro
+      - ./certs/jwt-signing.key:/certs/jwt-signing.key:ro
+    environment:
+      PORT: "8080"
+      GRPC_PORT: "50051"
+      DATABASE_URL: postgres://postgres:password@postgres_auth_db:5432/auth?sslmode=disable
+      NATS_URL: nats://nats:4222
+      GRPC_TLS_CA_CERT: /certs/ca.crt
+      GRPC_TLS_CERT: /certs/auth.crt
+      GRPC_TLS_KEY: /certs/auth.key
+      JWT_PRIVATE_KEY: /certs/jwt-signing.key
+    healthcheck:
+      test: ["CMD", "/app/healthcheck"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 15s
 
   subscription:
     build:
@@ -50,6 +87,8 @@ services:
         condition: service_started
       nats:
         condition: service_healthy
+      auth:
+        condition: service_healthy
     labels:
       filebeat_collect: "true"
     volumes:
@@ -61,8 +100,8 @@ services:
       GRPC_PORT: "50051"
       DATABASE_URL: postgres://postgres:password@postgres_db:5432/github_release_notifications?sslmode=disable
       GITHUB_TOKEN: ${GITHUB_TOKEN}
-      API_KEY: ${API_KEY}
       NATS_URL: nats://nats:4222
+      AUTH_GRPC_ADDR: auth:50051
       GRPC_TLS_CA_CERT: /certs/ca.crt
       GRPC_TLS_CERT: /certs/subscription.crt
       GRPC_TLS_KEY: /certs/subscription.key
@@ -134,6 +173,23 @@ services:
       - ./deploy/db/init:/docker-entrypoint-initdb.d
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U postgres -d github_release_notifications"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  postgres_auth_db:
+    image: postgres:16.9
+    container_name: github-release-notification-postgres-auth
+    restart: unless-stopped
+    logging: *default-logging
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: password
+      POSTGRES_DB: auth
+    volumes:
+      - postgres_auth_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres -d auth"]
       interval: 5s
       timeout: 5s
       retries: 10
@@ -254,6 +310,7 @@ services:
 
 volumes:
   postgres_data:
+  postgres_auth_data:
   nats_data:
   elasticsearch_data:
   prometheus_data:
