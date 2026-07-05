@@ -12,7 +12,7 @@ import (
 )
 
 func (s *IntegrationSuite) TestSubscribe_HappyPath() {
-	body := `{"email":"user@example.com","repo":"owner/repo"}`
+	body := `{"repo":"owner/repo"}`
 	w := s.do(http.MethodPost, "/api/subscribe", strings.NewReader(body))
 
 	s.Equal(http.StatusOK, w.Code)
@@ -33,13 +33,11 @@ func (s *IntegrationSuite) TestSubscribe_Validation() {
 		body string
 	}{
 		{"empty body", ""},
-		{"missing email", `{"repo":"owner/repo"}`},
-		{"missing repo", `{"email":"user@example.com"}`},
-		{"invalid email format", `{"email":"not-an-email","repo":"owner/repo"}`},
-		{"repo no slash", `{"email":"user@example.com","repo":"noslash"}`},
-		{"repo too many slashes", `{"email":"user@example.com","repo":"a/b/c"}`},
-		{"repo empty owner", `{"email":"user@example.com","repo":"/repo"}`},
-		{"repo empty name", `{"email":"user@example.com","repo":"owner/"}`},
+		{"missing repo", `{}`},
+		{"repo no slash", `{"repo":"noslash"}`},
+		{"repo too many slashes", `{"repo":"a/b/c"}`},
+		{"repo empty owner", `{"repo":"/repo"}`},
+		{"repo empty name", `{"repo":"owner/"}`},
 	}
 
 	for _, tc := range cases {
@@ -65,7 +63,7 @@ func (s *IntegrationSuite) TestSubscribe_Validation() {
 }
 
 func (s *IntegrationSuite) TestSubscribe_DuplicateSubscription() {
-	body := `{"email":"user@example.com","repo":"owner/repo"}`
+	body := `{"repo":"owner/repo"}`
 
 	s.Require().Equal(http.StatusOK, s.do(http.MethodPost, "/api/subscribe", strings.NewReader(body)).Code)
 
@@ -84,7 +82,7 @@ func (s *IntegrationSuite) TestSubscribe_DuplicateSubscription() {
 func (s *IntegrationSuite) TestSubscribe_RepoNotFoundOnGitHub() {
 	s.githubFake.err = db.ErrNotFound
 
-	body := `{"email":"user@example.com","repo":"owner/repo"}`
+	body := `{"repo":"owner/repo"}`
 	w := s.do(http.MethodPost, "/api/subscribe", strings.NewReader(body))
 
 	s.Equal(http.StatusNotFound, w.Code)

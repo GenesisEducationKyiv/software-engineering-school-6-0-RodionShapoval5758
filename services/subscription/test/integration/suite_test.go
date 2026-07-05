@@ -4,6 +4,10 @@ package integration_test
 
 import (
 	"context"
+	"crypto"
+	"crypto/ecdsa"
+	"crypto/elliptic"
+	"crypto/rand"
 	"net"
 	"net/http"
 	"testing"
@@ -32,12 +36,15 @@ type noopPinger struct{}
 
 func (noopPinger) Ping(context.Context) error { return nil }
 
-const testAPIKey = "test-integration-key"
+type stubKeys struct{ key *ecdsa.PublicKey }
+
+func (s *stubKeys) Key() (crypto.PublicKey, error) { return s.key, nil }
 
 type IntegrationSuite struct {
 	suite.Suite
 	router     http.Handler
 	githubFake *fakeGithubClient
+	signKey    *ecdsa.PrivateKey
 	grpcConn   *grpc.ClientConn
 	grpcSrv    *grpc.Server
 	bufLis     *bufconn.Listener
@@ -58,9 +65,13 @@ func (s *IntegrationSuite) SetupSuite() {
 	unsub := usecase.NewUnsubscribe(subRepo, deleteCat)
 	list := usecase.NewList(subRepo)
 
+	signKey, err := ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
+	s.Require().NoError(err)
+	s.signKey = signKey
+
 	h := handler.New(sub, conf, unsub, list)
 	m := metrics.New(prometheus.NewRegistry())
-	s.router = httpRouter.New(h, testAPIKey, m, noopPinger{}, noopPinger{})
+	s.router = httpRouter.New(h, &stubKeys{&signKey.PublicKey}, m, noopPinger{}, noopPinger{})
 
 	const bufSize = 1024 * 1024
 	s.bufLis = bufconn.Listen(bufSize)
