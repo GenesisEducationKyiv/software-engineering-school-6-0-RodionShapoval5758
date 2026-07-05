@@ -53,6 +53,17 @@ func (m *Mailer) SendRelease(toEmail, unsubscribeToken string, releaseTag, relea
 	return m.sendOne(toEmail, subject, body)
 }
 
+func (m *Mailer) SendVerification(toEmail, verifyToken string) error {
+	subject := "Verify your email address"
+
+	body, err := renderVerificationEmail(fmt.Sprintf("%s/auth/verify-email/%s", m.appBaseURL, verifyToken))
+	if err != nil {
+		return err
+	}
+
+	return m.sendOne(toEmail, subject, body)
+}
+
 func (m *Mailer) sendOne(toEmail, subject, body string) error {
 	address := fmt.Sprintf("%s:%s", m.host, m.port)
 

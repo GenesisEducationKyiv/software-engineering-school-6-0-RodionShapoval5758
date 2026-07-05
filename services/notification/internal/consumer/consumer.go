@@ -33,6 +33,7 @@ const (
 type Mailer interface {
 	SendConfirmation(toEmail, repoName, confirmToken string) error
 	SendRelease(toEmail, unsubscribeToken string, releaseTag, releaseName, releaseURL string) error
+	SendVerification(toEmail, verifyToken string) error
 }
 
 type Consumer struct {
@@ -126,6 +127,19 @@ func processMessage(subject string, data []byte, m Mailer) (outcome, string, str
 		}
 
 		return outcomeAck, "", ev.SagaID
+
+	case contract.SubjectVerifyEmail:
+		var ev contract.VerificationRequested
+		if err := json.Unmarshal(data, &ev); err != nil {
+			slog.Error("unmarshal verification event", "error", err)
+			return outcomePoison, "unmarshalable", ""
+		}
+		if err := m.SendVerification(ev.Email, ev.VerifyToken); err != nil {
+			slog.Error("send verification email", "error", err, "email", ev.Email)
+			return outcomeRetry, err.Error(), ""
+		}
+
+		return outcomeAck, "", ""
 
 	case contract.SubjectRelease:
 		var ev contract.ReleaseDetected
