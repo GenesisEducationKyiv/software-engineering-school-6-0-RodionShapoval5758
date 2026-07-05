@@ -36,6 +36,11 @@ func (m *sigMailer) SendRelease(_, _, _, _, _ string) error {
 	return m.err
 }
 
+func (m *sigMailer) SendVerification(_, _ string) error {
+	m.once.Do(func() { close(m.ch) })
+	return m.err
+}
+
 type ConsumerIntegrationSuite struct {
 	suite.Suite
 	mainStream jetstream.Stream
