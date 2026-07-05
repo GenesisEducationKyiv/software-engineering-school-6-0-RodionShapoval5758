@@ -12,6 +12,7 @@ import (
 type mockMailer struct {
 	confirmErr error
 	releaseErr error
+	verifyErr  error
 }
 
 func (m *mockMailer) SendConfirmation(toEmail, repoName, confirmToken string) error {
@@ -20,6 +21,10 @@ func (m *mockMailer) SendConfirmation(toEmail, repoName, confirmToken string) er
 
 func (m *mockMailer) SendRelease(toEmail, unsubscribeToken, releaseTag, releaseName, releaseURL string) error {
 	return m.releaseErr
+}
+
+func (m *mockMailer) SendVerification(toEmail, verifyToken string) error {
+	return m.verifyErr
 }
 
 var (
