@@ -23,6 +23,27 @@ var releaseTmpl = template.Must(template.New("release").Parse(`
 </p>
 `))
 
+var verificationTmpl = template.Must(template.New("verification").Parse(`
+<p>Verify your email address to activate your account:</p>
+<p>
+	<a href="{{.VerifyLink}}" style="background-color: #2ea44f; color: white; padding: 10px 20px; text-decoration: none; border-radius: 5px; display: inline-block;">Verify Email</a>
+</p>
+`))
+
+func renderVerificationEmail(verifyLink string) (string, error) {
+	var buf bytes.Buffer
+
+	if err := verificationTmpl.Execute(&buf, struct {
+		VerifyLink string
+	}{
+		VerifyLink: verifyLink,
+	}); err != nil {
+		return "", fmt.Errorf("render verification email: %w", err)
+	}
+
+	return buf.String(), nil
+}
+
 func renderConfirmationEmail(repoName, confirmLink string) (string, error) {
 	var buf bytes.Buffer
 
