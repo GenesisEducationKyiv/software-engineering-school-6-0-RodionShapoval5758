@@ -48,5 +48,6 @@ func StartDLQInspector(ctx context.Context, js jetstream.JetStream) error {
 	defer cc.Stop()
 
 	<-ctx.Done()
+
 	return nil
 }

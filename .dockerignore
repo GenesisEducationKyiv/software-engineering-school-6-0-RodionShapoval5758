@@ -20,8 +20,6 @@ swagger.yaml
 Taskfile.yaml
 docker-compose.yaml
 
-go.work
-go.work.sum
 
 frontend/node_modules/
 

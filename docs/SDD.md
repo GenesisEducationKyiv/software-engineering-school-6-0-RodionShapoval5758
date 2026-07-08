@@ -1,19 +1,21 @@
 # System Design Document
 
 ## 1. Overview
-This project is a Go monolith that lets users subscribe to GitHub repository release notifications by email. A user subscribes with an email and repository name, confirms the subscription through a tokenized link, and then receives notifications when the system detects a new release.
+This project is a GitHub release notification system built as three independently deployable Go services. Users subscribe an email to a GitHub repository, confirm the subscription through a tokenized link, and receive notifications when the system detects a new release. The services communicate asynchronously through NATS JetStream.
 
 ## 2. Context and Problem
-The problem is to provide a simple service that tracks GitHub repository releases and notifies interested users by email. Without such a service, users must manually check repositories for new releases.
+The problem is to notify users by email when a GitHub repository publishes a new release. Without such a service, users must manually check repositories.
 
-The original task defined several important constraints that shaped the system design:
-- the whole solution must be implemented as a single service
+Original constraints that shaped the initial design:
 - all application state must be stored in a database
 - repository existence must be validated through the GitHub API
 - release detection must happen through periodic background scanning
 - users must confirm subscriptions and be able to unsubscribe safely
 
-The current implementation keeps that shape: one Go service contains the HTTP API, business logic, database access, GitHub integration, mail sending, and background worker.
+The system evolved from a monolith into three bounded services in three phases:
+- **Phase 1** — Extracted the monitoring worker into its own deployable (`services/monitoring`)
+- **Phase 2** — Monitoring became fully event-driven: owns `scan_cursors` + `monitoring_outbox`, consumes `RepoTracked`/`RepoUntracked`, emits `ReleaseFound` via its own outbox relay
+- **Phase 3** — Dissolved the monolith: renamed to `services/subscription`, wired nginx to the new service name
 
 ## 3. Requirements
 ### Functional Requirements
@@ -22,192 +24,430 @@ The current implementation keeps that shape: one Go service contains the HTTP AP
 - Verify repository existence through the GitHub API before persisting a subscription
 - Require `Authorization: Bearer <API_KEY>` for `POST /api/subscribe` and `GET /api/subscriptions` when the `API_KEY` environment variable is set
 - Create pending subscriptions with confirmation and unsubscribe tokens, confirm them, list them by email, and remove them through unsubscribe token
-- Run schema migrations automatically on service startup
+- Run schema migrations automatically on service startup (each service runs its own migrations)
 - Periodically scan tracked repositories for releases in the background
 - Detect genuinely new releases and avoid repeated notifications for unchanged release tags
 - Send confirmation emails for new subscriptions
 - Send release notification emails only to confirmed subscribers when a new release is detected
 
 ### Non-Functional Requirements
-- Keep the architecture as a monolith
 - Preserve the REST contract defined in `swagger.yaml`
 - Use the database as the source of truth for subscriptions and repository tracking state
 - Handle GitHub `404` and `429` responses correctly
 - Keep confirmation and unsubscribe flows safe through persisted tokens
+- Monitoring must run as a single replica to avoid duplicate GitHub polling
+- Subscription and Notification services are horizontally scalable
 
 ## 4. High-Level Architecture
-The system consists of four main runtime parts:
-- Go API service that also runs the background worker in the same process
-- PostgreSQL database for subscriptions and repository state
-- GitHub REST API for repository validation and release checks
-- SMTP server for confirmation and notification emails
+
+Three services, one nginx edge, one NATS broker, one PostgreSQL instance:
 
 ```mermaid
 flowchart LR
-    Client[Client] -->|HTTP| App[API App]
+    Client[Client]
+    nginx[nginx]
 
-    App -->|SQL| DB[(PostgreSQL)]
-    App -->|REST| GitHub[GitHub API]
-    App -->|Email| Mail[SMTP]
+    subgraph subscription["Subscription Service"]
+        HTTP[HTTP Server]
+        FW[Fanout Consumer]
+        Relay1[Outbox Relay]
+        SagaCons[Saga Consumer]
+        SagaReaper[Saga Reaper]
+    end
 
-    Worker[Release Scanner] -->|REST| GitHub
-    Worker -->|SQL| DB
-    Worker -->|Email| Mail
+    subgraph monitoring["Monitoring Service (replicas=1)"]
+        Scanner[GitHub Scanner]
+        TrackingConsumer[Tracking Consumer]
+        Relay2[Outbox Relay]
+    end
 
-    App -. in-process .- Worker
+    subgraph notification["Notification Service"]
+        NotifConsumer[NATS Consumer]
+        Mailer[Mailer]
+    end
+
+    DB[(PostgreSQL)]
+    NATS((NATS JetStream))
+    GitHub[GitHub API]
+    SMTP[SMTP]
+
+    Client -->|HTTP| nginx
+    nginx -->|proxy /api/| HTTP
+
+    HTTP -->|SQL| DB
+    Relay1 -->|SQL| DB
+    FW -->|SQL| DB
+    SagaCons -->|SQL| DB
+    SagaReaper -->|SQL| DB
+
+    Scanner -->|SQL| DB
+    TrackingConsumer -->|SQL| DB
+    Relay2 -->|SQL| DB
+    Scanner -->|REST| GitHub
+
+    Relay1 -->|publish| NATS
+    Relay2 -->|publish| NATS
+    NATS -->|ReleaseFound| FW
+    NATS -->|RepoTracked/RepoUntracked| TrackingConsumer
+    NATS -->|ConfirmationRequested/ReleaseDetected| NotifConsumer
+    NATS -->|EmailSent/EmailFailed| SagaCons
+
+    NotifConsumer --> Mailer
+    Mailer -->|Email| SMTP
+    NotifConsumer -->|EmailSent/EmailFailed| NATS
 ```
 
-High-level runtime flow:
-1. Client sends an HTTP request to the API
-2. Router applies middleware and forwards the request to the service layer
-3. Service layer validates input, coordinates persistence, and calls GitHub or mail integrations when needed
-4. PostgreSQL stores subscription and repository tracking state
-5. The in-process worker periodically checks GitHub releases and triggers notifications
+### NATS Streams
+
+| Stream | Subjects | Retention | Producer | Consumer |
+|---|---|---|---|---|
+| `NOTIFICATIONS` | `notifications.>` | WorkQueue | Subscription relay, Monitoring relay | Notification svc, Subscription fanout |
+| `NOTIFICATIONS_DLQ` | `dlq.notifications` | Limits | Notification svc | — |
+| `TRACKING` | `tracking.>` | Limits | Subscription relay | Monitoring svc |
+| `SAGA` | `saga.>` | Limits | Notification svc | Subscription saga consumer |
+
+### Event subjects
+
+| Subject | Emitted by | Consumed by | Description |
+|---|---|---|---|
+| `notifications.confirmation` | Subscription | Notification | Email confirmation link (carries `saga_id`) |
+| `notifications.release` | Subscription | Notification | Per-recipient release email |
+| `notifications.release_found` | Monitoring | Subscription | Repo-level new release event |
+| `tracking.repo.tracked` | Subscription | Monitoring | New subscription confirmed |
+| `tracking.repo.untracked` | Subscription | Monitoring | Last subscriber removed |
+| `dlq.notifications` | Notification | — | Undeliverable events |
+| `saga.email.sent` | Notification | Subscription saga | Confirmation email delivered successfully |
+| `saga.email.failed` | Notification | Subscription saga | Confirmation email permanently undeliverable |
 
 ## 5. Main Components
-- HTTP layer: handles routing, request parsing, response writing, and middleware. If `API_KEY` is configured, `POST /api/subscribe` and `GET /api/subscriptions` require `Authorization: Bearer <API_KEY>`.
-- Service layer: owns subscription lifecycle, repository reuse/creation, token handling, unsubscribe cleanup, and orchestration of persistence plus integrations
-- Store layer: performs database operations for subscriptions and repositories
-- GitHub client: validates repositories and fetches release data
-- Mail service: sends confirmation and release emails synchronously through SMTP
-- Background worker: scans repositories, detects new releases through shared repository state, and triggers notifications for confirmed subscriptions
+
+### Subscription Service (`services/subscription`)
+Owns the REST API, subscription lifecycle, fan-out, and the subscribe saga orchestrator. Serves all four endpoints. On subscribe, writes a pending subscription, a saga row, a `ConfirmationRequested` outbox entry, and a `RepoTracked` outbox entry in a single transaction. On last unsubscribe, emits `RepoUntracked`. Runs the fanout NATS consumer: receives `ReleaseFound`, lists confirmed subscribers, and inserts per-recipient `ReleaseDetected` outbox rows in a single transaction. Also runs the saga reply consumer and a TTL reaper (see Subscribe Saga below).
+
+### Monitoring Service (`services/monitoring`, `replicas: 1`)
+Owns GitHub scanning and release detection. Consumes `RepoTracked`/`RepoUntracked` to maintain `scan_cursors`. On each tick, scans all cursored repos against GitHub with up to 10 concurrent goroutines. On a new tag, atomically advances the cursor and inserts `ReleaseFound` into `monitoring_outbox` in a single transaction. The outbox relay publishes to NATS.
+
+### Notification Service (`services/notification`)
+Stateless email sender. Consumes `ConfirmationRequested` and `ReleaseDetected` from the `NOTIFICATIONS` stream. Renders and delivers via SMTP. On transient SMTP failure, NAKs so the message is redelivered. On unmarshal failure, terminates the message and writes to the DLQ stream.
+
+### Transactional Outbox
+Both Subscription and Monitoring use the same pattern: state changes and "intent to publish" are committed in one database transaction. A relay goroutine polls for unpublished rows with `FOR UPDATE SKIP LOCKED`, publishes to NATS with a stable `Msg-Id` header for server-side deduplication, and marks rows published. This provides at-least-once delivery with bounded duplication, with no event loss on process restart.
+
+### Subscribe Saga Orchestrator
+A coordinated (orchestration-based) saga that drives the subscribe workflow as a recoverable multi-step transaction. Saga state is persisted in `subscribe_sagas`. Three goroutines handle it: the outbox relay (publishes the initial events), the saga reply consumer (processes `EmailSent`/`EmailFailed` from NATS), and the reaper (polls for expired sagas every 30 s). See section 6 for the full flow.
+
+### nginx
+Edge proxy. Routes `/api/` to the Subscription service. Serves static assets from its document root.
 
 ## 6. Key Workflows
-### Subscribe and Confirm Flow
+
+### Subscribe and Confirm Flow (with Saga)
 ```mermaid
 sequenceDiagram
     actor User
-    participant API
+    participant nginx
+    participant Sub as Subscription Svc
     participant GitHub
     participant DB
+    participant Relay as Outbox Relay
+    participant NATS
+    participant Mon as Monitoring Svc
+    participant Notif as Notification Svc
     participant SMTP
+    participant Saga as Saga Orchestrator
 
-    User->>API: Subscribe
-    API->>GitHub: Validate repository
-    API->>DB: Store pending subscription
-    API->>SMTP: Send confirmation email
-    User->>API: Confirm token
-    API->>DB: Activate subscription
+    User->>nginx: POST /api/subscribe
+    nginx->>Sub: forward
+    Sub->>GitHub: Validate repository
+    Sub->>DB: find-or-create repository
+    Sub->>DB: [tx] create pending subscription\n+ INSERT subscribe_sagas(STARTED)\n+ INSERT outbox(ConfirmationRequested+saga_id)\n+ INSERT outbox(RepoTracked)
+
+    Relay->>DB: [tx] FetchForUpdate (SKIP LOCKED)
+    Relay->>NATS: publish ConfirmationRequested
+    Relay->>NATS: publish RepoTracked
+    Relay->>DB: MarkPublished
+
+    NATS->>Notif: ConfirmationRequested
+    Notif->>SMTP: Send confirmation email
+    alt email sent successfully
+        Notif->>NATS: publish EmailSent(saga_id)
+        NATS->>Saga: EmailSent
+        Saga->>DB: saga STARTED→AWAITING_CONFIRMATION
+    else permanent failure
+        Notif->>NATS: publish EmailFailed(saga_id)
+        NATS->>Saga: EmailFailed
+        Saga->>DB: saga→COMPENSATING→FAILED\ndelete pending subscription\nDeleteIfOrphaned (→ RepoUntracked)
+    end
+
+    NATS->>Mon: RepoTracked
+    Mon->>DB: upsert scan_cursors
+
+    Note over User: User clicks the confirmation link
+    User->>nginx: GET /api/confirm/{token}
+    nginx->>Sub: forward
+    Sub->>DB: [tx] mark subscription confirmed\n+ saga AWAITING_CONFIRMATION→COMPLETED
 ```
 
-1. Client sends `POST /api/subscribe`
-2. Router enforces API-key middleware if `API_KEY` is configured
-3. API validates input and repository format
-4. GitHub client verifies repository existence
-5. Service creates or finds repository state
-6. Service stores a pending subscription with confirmation token
-7. Mail service sends the confirmation email synchronously
-8. Client opens `GET /api/confirm/{token}`
-9. Service resolves the confirmation token and marks the subscription as confirmed
-10. Unknown confirmation tokens return an invalid-token response
-11. Confirmation tokens currently do not expire and are not consumed after confirmation, so confirming an already confirmed subscription is idempotent
+### Subscribe Saga State Machine
+```mermaid
+stateDiagram-v2
+    [*] --> STARTED : POST /subscribe (sub + saga row created)
+    STARTED --> AWAITING_CONFIRMATION : EmailSent received
+    STARTED --> COMPENSATING : EmailFailed received
+    AWAITING_CONFIRMATION --> COMPLETED : User confirms (GET /confirm)
+    AWAITING_CONFIRMATION --> COMPENSATING : EmailFailed or TTL exceeded (reaper)
+    COMPENSATING --> FAILED : subscription deleted, repo untracked
+    COMPENSATING --> COMPLETED : subscription already confirmed (confirm won the race)
+    COMPLETED --> [*]
+    FAILED --> [*]
+```
 
 ### Unsubscribe Flow
 ```mermaid
 sequenceDiagram
     actor User
-    participant API
+    participant nginx
+    participant Sub as Subscription Svc
     participant DB
+    participant Relay as Outbox Relay
+    participant NATS
+    participant Mon as Monitoring Svc
 
-    User->>API: Unsubscribe token
-    API->>DB: Find subscription
-    API->>DB: Delete subscription
-    opt No remaining subscriptions
-        API->>DB: Delete repository
+    User->>nginx: GET /api/unsubscribe/{token}
+    nginx->>Sub: forward
+    Sub->>DB: Delete subscription by token
+    Sub->>DB: HasAnyByRepositoryID
+    opt No remaining subscriptions for this repository
+        Sub->>DB: Delete repository
+        Sub->>DB: INSERT outbox(RepoUntracked)
+        Relay->>NATS: publish RepoUntracked
+        NATS->>Mon: RepoUntracked
+        Mon->>DB: delete scan_cursors row
     end
 ```
-
-1. Client opens `GET /api/unsubscribe/{token}`
-2. Service resolves unsubscribe token
-3. Subscription is deleted
-4. If the token is unknown or already used, the API returns an invalid-token response
-5. Unsubscribe tokens currently do not expire, but they become unusable after the subscription is deleted
-6. If no subscriptions remain for that repository, the orphaned repository record is deleted
-7. Deleting the repository avoids tracking repositories with no subscribers. If someone subscribes later, the repository is validated and created again.
 
 ### Release Scan and Notify Flow
 ```mermaid
 sequenceDiagram
-    participant Worker
+    participant Mon as Monitoring Svc (singleton)
     participant DB
     participant GitHub
+    participant Relay2 as Monitoring Relay
+    participant NATS
+    participant Sub as Subscription Svc
+    participant Relay1 as Subscription Relay
+    participant Notif as Notification Svc
     participant SMTP
 
-    Worker->>DB: Load repositories
-    Worker->>GitHub: Fetch latest release
-    Worker->>DB: Compare last_seen_tag
-    Worker->>DB: Update last_seen_tag
-    Worker->>DB: Load subscribers
-    Worker->>SMTP: Send notifications
+    Note over Mon: Ticks every 25 s
+    Mon->>DB: ListTracked (scan_cursors)
+    Mon->>GitHub: GetLatestTag (≤10 concurrent)
+    alt new release detected
+        Mon->>DB: [tx] UpdateLastSeenTag in scan_cursors\n+ INSERT monitoring_outbox(ReleaseFound)
+    end
+
+    Relay2->>DB: [tx] FetchForUpdate monitoring_outbox (SKIP LOCKED)
+    Relay2->>NATS: publish ReleaseFound (notifications.release_found)
+    Relay2->>DB: MarkPublished
+
+    NATS->>Sub: ReleaseFound (fanout consumer)
+    Sub->>DB: ListConfirmed subscribers for repo
+    Sub->>DB: [tx] INSERT outbox(ReleaseDetected) × N subscribers
+
+    Relay1->>DB: [tx] FetchForUpdate outbox (SKIP LOCKED)
+    Relay1->>NATS: publish ReleaseDetected × N
+    Relay1->>DB: MarkPublished
+
+    NATS->>Notif: ReleaseDetected
+    Notif->>SMTP: Send notification email
+    alt delivery fails permanently
+        Notif->>NATS: publish to dlq.notifications
+    end
 ```
 
-1. Worker wakes up on interval
-2. Worker loads tracked repositories from the database
-3. Worker processes repositories concurrently with bounded parallelism
-4. Worker fetches latest release data from GitHub
-5. Worker compares the latest tag against stored `last_seen_tag`
-6. If a release is new, repository state is updated with the new `last_seen_tag`
-7. Worker loads affected confirmed subscriptions
-8. Mail service sends notifications synchronously for each confirmed subscriber
-9. The worker updates `last_seen_tag` before sending emails, so the current behavior is at-most-once notification attempts per release, not guaranteed delivery
-10. Per-repository failures are isolated and logged without stopping the whole scan
-11. If GitHub rate limit is hit, the current scan pass is canceled and resumed on the next interval
-
 ## 7. Data and Persistence
-The design stores two main kinds of state:
-- subscription state
-  - email
-  - repository reference
-  - confirmation token
-  - unsubscribe token
-  - confirmation status
-- repository state
-  - repository name
-  - `last_seen_tag`
-  - `created_at`
-  - `updated_at`
 
-Important persistence notes:
-- Multiple subscriptions can reference the same repository record, so repository-level state such as `last_seen_tag` is stored once and shared across subscribers.
-- Repository identity is enforced by a unique repository name, and subscription identity is enforced by a uniqueness constraint on `(email, repository_id)`.
-- Confirmation and unsubscribe tokens are persisted and individually unique.
-- Repository creation follows a find-or-create pattern with conflict recovery in the service layer, because repository uniqueness is enforced by the database and concurrent subscribe requests may race.
-- Token generation may retry on uniqueness conflicts, because token uniqueness is also enforced by persistence constraints.
-- When a subscription is deleted, the service checks whether that repository still has any remaining subscriptions. If not, the repository row is deleted as an orphaned record.
-- Indexes support common lookup paths such as email, confirmation token, and unsubscribe token.
+### Tables and Ownership
+
+| Table | Owner | Purpose |
+|---|---|---|
+| `repositories` | Subscription | Repo registry (find-or-create, orphan cleanup) |
+| `subscriptions` | Subscription | Subscription lifecycle, tokens, confirmed flag |
+| `outbox` | Subscription | Outbox relay table for subscription events |
+| `subscribe_sagas` | Subscription | Subscribe saga state machine (one row per subscribe attempt) |
+| `scan_cursors` | Monitoring | Per-repo `last_seen_tag` + `full_name` for the scanner |
+| `monitoring_outbox` | Monitoring | Outbox relay table for monitoring events |
+
+Monitoring migrations are tracked in `monitoring_schema_migrations` to avoid collision when both services run migrations against the same Postgres instance.
+
+### Schema
+
+```mermaid
+erDiagram
+    repositories {
+        bigserial id PK
+        varchar name UK "owner/repo, NOT NULL"
+        varchar last_seen_tag "legacy column; no longer written by any service"
+        timestamptz created_at
+        timestamptz updated_at
+    }
+
+    subscriptions {
+        bigserial id PK
+        varchar email "NOT NULL"
+        bigint repository_id FK "ON DELETE CASCADE"
+        boolean confirmed "NOT NULL DEFAULT false"
+        varchar confirmation_token UK
+        varchar unsubscribe_token UK
+        timestamptz created_at
+        timestamptz confirmed_at
+    }
+
+    outbox {
+        bigserial id PK
+        text subject "NOT NULL"
+        bytea payload "NOT NULL"
+        timestamptz created_at "NOT NULL"
+        timestamptz published_at "NULL = pending"
+    }
+
+    subscribe_sagas {
+        bigserial id PK
+        text saga_id UK "NOT NULL"
+        bigint subscription_id "nullable after compensation"
+        bigint repository_id "NOT NULL"
+        varchar email "NOT NULL"
+        text state "STARTED|AWAITING_CONFIRMATION|COMPENSATING|COMPLETED|FAILED"
+        timestamptz deadline_at "NOT NULL"
+        text last_error "nullable"
+        timestamptz created_at "NOT NULL"
+        timestamptz updated_at "NOT NULL"
+    }
+
+    scan_cursors {
+        bigint repo_id PK
+        text full_name "NOT NULL"
+        text last_seen_tag "NOT NULL DEFAULT empty string"
+        timestamptz created_at "NOT NULL"
+        timestamptz updated_at "NOT NULL"
+    }
+
+    monitoring_outbox {
+        bigserial id PK
+        text subject "NOT NULL"
+        bytea payload "NOT NULL"
+        timestamptz created_at "NOT NULL"
+        timestamptz published_at "NULL = pending"
+    }
+
+    repositories ||--o{ subscriptions : "referenced by"
+```
+
+`repositories.last_seen_tag` is a legacy column from the monolith era. Monitoring no longer writes to it; it is a candidate for a future cleanup migration.
+
+### Data Ownership Diagram
+
+```mermaid
+flowchart TB
+    subgraph sub["Subscription Service"]
+        repos[(repositories)]
+        subs[(subscriptions)]
+        outboxt[(outbox)]
+        sagas[(subscribe_sagas)]
+    end
+
+    subgraph mon["Monitoring Service"]
+        cursors[(scan_cursors)]
+        monoutbox[(monitoring_outbox)]
+    end
+
+    HTTP["HTTP handlers"]
+    FW["Fanout Consumer"]
+    Relay1["Subscription Relay"]
+    Scanner["GitHub Scanner"]
+    TrackCons["Tracking Consumer"]
+    Relay2["Monitoring Relay"]
+
+    HTTP -->|"lifecycle\nSELECT/INSERT/DELETE"| subs
+    HTTP -->|"find-or-create"| repos
+    HTTP -->|"INSERT ConfirmationRequested\n+ RepoTracked"| outboxt
+
+    FW -.->|"SELECT confirmed\n(read only)"| subs
+    FW -->|"INSERT ReleaseDetected × N"| outboxt
+
+    Relay1 -->|"UPDATE published_at"| outboxt
+
+    Scanner -->|"UPDATE last_seen_tag"| cursors
+    Scanner -->|"INSERT ReleaseFound"| monoutbox
+
+    TrackCons -->|"UPSERT / DELETE"| cursors
+
+    Relay2 -->|"UPDATE published_at"| monoutbox
+
+    SagaOrch["Saga Orchestrator"]
+    SagaReaper["Saga Reaper"]
+
+    SagaOrch -->|"INSERT (saga row)"| sagas
+    SagaOrch -->|"UPDATE state"| sagas
+    SagaOrch -.->|"DELETE unconfirmed"| subs
+
+    SagaReaper -->|"SELECT expired"| sagas
+```
 
 ## 8. External Integrations and Failure Handling
+
 ### GitHub API
-- used to validate repositories during subscribe flow
-- used to fetch latest release information during scans
-- `404` is handled differently depending on the flow: repository creation rejects unknown repositories, while scanning skips repositories that do not currently produce latest release data
-- `429` causes the current scan pass to stop early and resume on the next interval
-- temporary network failures are logged and isolated so one repository failure does not break the whole scan
+- validates repositories during subscribe (find-or-create)
+- fetches latest release data during monitoring scans
+- `404` during subscribe rejects the repository; during scan it is treated as "no release yet"
+- `429` cancels the current scan pass; next interval retries all repos
+- per-repo failures are isolated so one failing repo does not stop the whole scan
+
+### NATS JetStream
+- required infrastructure dependency; all async flows stop if NATS is unavailable
+- `NOTIFICATIONS` uses WorkQueue retention so each message is consumed exactly once across all consumers
+- `Msg-Id` headers on every publish enable server-side deduplication within a 2-minute window
+- monitoring relay uses `mon-` prefixed MsgIDs to avoid collision with subscription relay IDs
+- the DLQ stream (`NOTIFICATIONS_DLQ`) captures messages that the notification service terminates
 
 ### SMTP
-- used for confirmation emails and release notifications
-- confirmation emails are sent synchronously during subscription creation, so a delivery failure makes the subscribe request fail after the pending subscription has already been stored
-- release notification emails are sent synchronously by the worker, and per-recipient send failures are logged without stopping the rest of the scan
+- used only by the Notification service
+- transient SMTP failures cause a NAK so JetStream redelivers the message
+- permanent failures result in the message being terminated and written to the DLQ
 
 ### Database
-- stores all application state
-- migrations run on startup
-- uniqueness constraints and indexes protect lifecycle and lookup invariants
+- single Postgres instance shared by all services
+- each service runs its own migrations on startup; tracking tables are separate
+- `FOR UPDATE SKIP LOCKED` in outbox relays allows safe concurrent relay
 
-## 9. Tradeoffs and Future Evolution
+## 9. Known Limitations
+
+- **Saga reply is not outboxed on the Notification side**: `EmailSent`/`EmailFailed` are published directly by the Notification service without a DB-backed outbox. If NATS is briefly unavailable at the moment of publish the saga reply may be lost. The orchestrator's idempotent state transitions prevent double-compensation, but a lost reply leaves the saga stuck in `STARTED` until the TTL reaper fires.
+- **`scan_cursors` bootstrap gap**: Monitoring starts with an empty `scan_cursors` table. Repos subscribed before Phase 2 will not be scanned until a new subscribe triggers a `RepoTracked` event.
+- **`RepoUntracked` best-effort**: The outbox insert happens after the subscription delete transaction, not inside it. A crash between them loses the event; monitoring continues scanning the deleted repo's cursor until a restart.
+- **`repositories.last_seen_tag` is a dead column**: Exists in the schema but is not written by any service post-Phase-2.
+- **No physical DB isolation**: Services share one Postgres instance; ownership is enforced by code only.
+
+## 10. Tradeoffs and Future Evolution
+
 Current design tradeoffs:
-- monolith instead of multiple services: lower operational complexity and simpler local development, but the HTTP API and background worker are deployed and scaled together
-- polling instead of webhooks: works for arbitrary public repositories without admin access, but notifications are delayed by scan interval and constrained by GitHub rate limits
-- shared repository state: avoids duplicate release checks and duplicated `last_seen_tag` values, but requires joins, concurrent find-or-create handling, and orphan cleanup
+- **Event-driven via NATS**: decouples services and provides at-least-once delivery, but adds operational complexity and eventual consistency
+- **Shared Postgres**: reduces ops overhead vs separate databases, but services are not isolated at the persistence layer
+- **Monitoring singleton**: avoids duplicate GitHub polling and race conditions on `scan_cursors`, but limits horizontal scale
+- **Polling instead of webhooks**: works for any public repo without admin access, but notifications are delayed by the scan interval
+- **Outbox over direct publish**: atomicity between state change and publish intent, at the cost of a relay loop and added latency
 
 Possible future improvements:
-- caching for GitHub requests
-- stronger retry/backoff strategy
-- metrics and observability
-- more mature deployment and CI/CD workflows
+- bootstrap migration seeding `scan_cursors` from `repositories`
+- drop `repositories.last_seen_tag`
+- `RepoUntracked` inside the same transaction as the repository delete
+- physical DB separation per service
+- contract versioning (`services/contract` → protobuf or versioned Go module)
+- horizontal NATS clustering for HA
+- consumer lag metrics and alerting
 
-## 10. Related ADRs
-Current ADRs:
+## 11. Related ADRs
 - `ADR-0001: Use pgx for PostgreSQL access`
 - `ADR-0002: Poll GitHub API to detect new releases`
 - `ADR-0003: Model repositories separately from subscriptions`
+- `ADR-0004: Use NATS JetStream for async notification delivery`

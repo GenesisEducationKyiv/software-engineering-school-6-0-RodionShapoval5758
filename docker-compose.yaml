@@ -29,18 +29,18 @@ services:
     restart: unless-stopped
     logging: *default-logging
     depends_on:
-      app:
+      subscription:
         condition: service_healthy
       notification:
         condition: service_started
     ports:
       - "80:80"
 
-  app:
+  subscription:
     build:
       context: .
-      dockerfile: build/api.Dockerfile
-    container_name: github-release-notification-api
+      dockerfile: build/subscription.Dockerfile
+    container_name: github-release-notification-subscription
     restart: unless-stopped
     logging: *default-logging
     depends_on:
@@ -64,6 +64,24 @@ services:
       timeout: 5s
       retries: 5
       start_period: 15s
+
+  monitoring:
+    build:
+      context: .
+      dockerfile: build/monitoring.Dockerfile
+    container_name: github-release-notification-monitoring
+    restart: unless-stopped
+    logging: *default-logging
+    depends_on:
+      subscription:
+        condition: service_healthy
+      nats:
+        condition: service_healthy
+    environment:
+      DATABASE_URL: postgres://postgres:password@postgres_db:5432/github_release_notifications?sslmode=disable
+      GITHUB_TOKEN: ${GITHUB_TOKEN}
+      NATS_URL: nats://nats:4222
+      SCAN_INTERVAL: "25s"
 
   notification:
     build:
@@ -200,7 +218,7 @@ services:
       - ./deploy/prometheus/prometheus.yaml:/etc/prometheus/prometheus.yaml:ro
       - prometheus_data:/prometheus
     depends_on:
-      - app
+      - subscription
 
   filebeat:
     image: docker.elastic.co/beats/filebeat:8.13.4

@@ -93,8 +93,21 @@ jobs:
         uses: actions/setup-go@v6
         with:
           go-version-file: go.mod
-      - name: Run linter
+      - name: Lint subscription service
         uses: golangci/golangci-lint-action@v9
         with:
           version: v2.11.4
-          args: --config=.golangci.yaml
+          args: --config=.golangci.yaml ./services/subscription/...
+          working-directory: .
+      - name: Lint monitoring service
+        uses: golangci/golangci-lint-action@v9
+        with:
+          version: v2.11.4
+          args: --config=.golangci.yaml ./services/monitoring/...
+          working-directory: .
+      - name: Lint notification service
+        uses: golangci/golangci-lint-action@v9
+        with:
+          version: v2.11.4
+          args: --config=.golangci.yaml ./services/notification/...
+          working-directory: .

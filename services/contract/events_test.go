@@ -47,14 +47,14 @@ func TestConfirmationRequestedJSONRoundTrip(t *testing.T) {
 	}
 }
 
-func TestReleasePublishedJSONRoundTrip(t *testing.T) {
+func TestReleaseDetectedJSONRoundTrip(t *testing.T) {
 	tests := []struct {
 		name  string
-		event contract.ReleasePublished
+		event contract.ReleaseDetected
 	}{
 		{
 			name: "standard release event",
-			event: contract.ReleasePublished{
+			event: contract.ReleaseDetected{
 				Email:            "user@example.com",
 				UnsubscribeToken: "unsub123def456",
 				ReleaseTag:       "v1.2.3",
@@ -64,7 +64,7 @@ func TestReleasePublishedJSONRoundTrip(t *testing.T) {
 		},
 		{
 			name: "release with special characters in name",
-			event: contract.ReleasePublished{
+			event: contract.ReleaseDetected{
 				Email:            "dev+notify@company.com",
 				UnsubscribeToken: "token-with-dashes",
 				ReleaseTag:       "v2.0.0-beta.1",
@@ -79,7 +79,7 @@ func TestReleasePublishedJSONRoundTrip(t *testing.T) {
 			data, err := json.Marshal(tt.event)
 			require.NoError(t, err)
 
-			var unmarshaled contract.ReleasePublished
+			var unmarshaled contract.ReleaseDetected
 			err = json.Unmarshal(data, &unmarshaled)
 			require.NoError(t, err)
 

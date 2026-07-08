@@ -38,8 +38,6 @@ func run() error {
 	if err != nil {
 		return err
 	}
-	defer nc.Drain()
-
 	js, err := jetstream.New(nc)
 	if err != nil {
 		return err
@@ -88,6 +86,11 @@ func run() error {
 		return err
 	}
 
+	if err := nc.Drain(); err != nil {
+		slog.Error("nats drain failed", "error", err)
+	}
+
 	slog.Info("shutdown complete")
+
 	return nil
 }

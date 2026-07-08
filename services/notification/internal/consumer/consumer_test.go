@@ -72,7 +72,7 @@ func TestProcessMessage(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			m := &mockMailer{confirmErr: tt.confirmErr, releaseErr: tt.releaseErr}
-			oc, _ := processMessage(tt.subject, tt.data, m)
+			oc, _, _ := processMessage(tt.subject, tt.data, m)
 			assert.Equal(t, tt.expectedOutcome, oc)
 		})
 	}
