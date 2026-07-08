@@ -35,7 +35,7 @@ export function provisionToken() {
     throw new Error(`provisionToken: verification email never arrived for ${email}`);
   }
 
-  const verifyToken = extractToken(getBody(msgId), 'auth/verify-email');
+  const verifyToken = extractToken(getBody(msgId), 'verify-email');
   if (!verifyToken) {
     throw new Error(`provisionToken: could not extract verify token for ${email}`);
   }
