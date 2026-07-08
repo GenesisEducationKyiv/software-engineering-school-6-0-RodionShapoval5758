@@ -6,6 +6,13 @@
 // 200 RPS is high enough to exercise the pool meaningfully but well under saturation
 // so the service stays healthy and any degradation trend is clearly a leak, not load.
 //
+// Unlike the other read tests, this run (30m) exceeds the access token's 15m
+// TTL, so a single shared token can't survive the whole test. Each VU
+// provisions its own account lazily on first use (module-scope state in k6
+// is per-VU, so this happens once per VU, not once per iteration) and
+// refreshes it independently on expiry — there's no cross-VU race, because
+// each VU only ever touches its own (single-use, rotating) refresh token.
+//
 // Watch while running (USE dashboard):
 //   go_goroutines              — should be flat; steady climb = goroutine leak.
 //   go_memstats_heap_inuse_bytes — sawtooth (GC) is normal; upward trend = memory leak.
@@ -16,6 +23,7 @@
 import http from 'k6/http';
 import { check } from 'k6';
 import { BASE_URL, authHeaders } from './config.js';
+import { provisionToken, refreshSession } from './lib/auth.js';
 
 export const options = {
   scenarios: {
@@ -35,9 +43,22 @@ export const options = {
   },
 };
 
+let session = null;
+
 export default function () {
-  const res = http.get(`${BASE_URL}/api/subscriptions?email=soak@test.com`, {
-    headers: authHeaders,
-  });
+  if (!session) {
+    session = provisionToken();
+  }
+
+  let res = http.get(`${BASE_URL}/api/subscriptions`, { headers: authHeaders(session.accessToken) });
+
+  if (res.status === 401) {
+    const refreshed = refreshSession(session.refreshToken);
+    if (refreshed) {
+      session = { ...session, ...refreshed };
+      res = http.get(`${BASE_URL}/api/subscriptions`, { headers: authHeaders(session.accessToken) });
+    }
+  }
+
   check(res, { 'status 200': (r) => r.status === 200 });
 }

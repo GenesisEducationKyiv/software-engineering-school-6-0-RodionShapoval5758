@@ -10,6 +10,9 @@
 //   - Does latency recover to baseline after the burst ends?
 //   - Does the pool drain cleanly (db_pool_acquired drops back to idle)?
 //
+// One shared account for the whole run — the ~40s duration is well under the
+// access token's 15m TTL, so no refresh handling is needed.
+//
 // Watch:
 //   RED dashboard  — tall spike on request-rate; p95 climbing during burst is expected.
 //   USE dashboard  — db_pool_empty_acquire_total spikes then recovers post-burst.
@@ -19,6 +22,7 @@
 import http from 'k6/http';
 import { check } from 'k6';
 import { BASE_URL, authHeaders } from './config.js';
+import { provisionToken } from './lib/auth.js';
 
 export const options = {
   scenarios: {
@@ -40,9 +44,14 @@ export const options = {
   },
 };
 
-export default function () {
-  const res = http.get(`${BASE_URL}/api/subscriptions?email=spike@test.com`, {
-    headers: authHeaders,
+export function setup() {
+  const { accessToken } = provisionToken();
+  return { token: accessToken };
+}
+
+export default function (data) {
+  const res = http.get(`${BASE_URL}/api/subscriptions`, {
+    headers: authHeaders(data.token),
   });
   check(res, { 'status 200': (r) => r.status === 200 });
 }

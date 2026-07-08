@@ -8,6 +8,9 @@
 // Unlike read-stress.js (which runs to completion so you see the whole curve),
 // this test gives you a single precise headline: "broke at N RPS".
 //
+// One shared account for the whole run — the ≤10 min duration is under the
+// access token's 15m TTL, so no refresh handling is needed.
+//
 // How to read the abort:
 //   k6 prints: "thresholds on metrics 'http_req_duration' were breached; stopping test."
 //   Look at the last "iteration_duration" line in stdout — the rate at that timestamp
@@ -28,6 +31,7 @@
 import http from 'k6/http';
 import { check } from 'k6';
 import { BASE_URL, authHeaders } from './config.js';
+import { provisionToken } from './lib/auth.js';
 
 export const options = {
   scenarios: {
@@ -50,9 +54,14 @@ export const options = {
   },
 };
 
-export default function () {
-  const res = http.get(`${BASE_URL}/api/subscriptions?email=breakpoint@test.com`, {
-    headers: authHeaders,
+export function setup() {
+  const { accessToken } = provisionToken();
+  return { token: accessToken };
+}
+
+export default function (data) {
+  const res = http.get(`${BASE_URL}/api/subscriptions`, {
+    headers: authHeaders(data.token),
   });
   check(res, { 'status 200': (r) => r.status === 200 });
 }

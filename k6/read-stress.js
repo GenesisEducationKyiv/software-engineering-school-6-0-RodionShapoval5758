@@ -7,7 +7,8 @@
 // is for. This test completes fully so you get the whole shape on the dashboards.
 //
 // Only hits GET /api/subscriptions (one DB query per request) to maximise pool
-// pressure. Mixing in /api/validate (no DB) would dilute the signal.
+// pressure. One shared account for the whole run — ~6.5 min is well under the
+// access token's 15m TTL, so no refresh handling is needed.
 //
 // What to look for:
 //   RED dashboard  — find the RPS stage where p95 starts climbing steeply. That
@@ -22,6 +23,7 @@
 import http from 'k6/http';
 import { check } from 'k6';
 import { BASE_URL, authHeaders } from './config.js';
+import { provisionToken } from './lib/auth.js';
 
 export const options = {
   scenarios: {
@@ -48,9 +50,14 @@ export const options = {
   },
 };
 
-export default function () {
-  const res = http.get(`${BASE_URL}/api/subscriptions?email=stress@test.com`, {
-    headers: authHeaders,
+export function setup() {
+  const { accessToken } = provisionToken();
+  return { token: accessToken };
+}
+
+export default function (data) {
+  const res = http.get(`${BASE_URL}/api/subscriptions`, {
+    headers: authHeaders(data.token),
   });
   check(res, { 'status 200': (r) => r.status === 200 });
 }
