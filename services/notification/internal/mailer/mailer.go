@@ -56,7 +56,7 @@ func (m *Mailer) SendRelease(toEmail, unsubscribeToken string, releaseTag, relea
 func (m *Mailer) SendVerification(toEmail, verifyToken string) error {
 	subject := "Verify your email address"
 
-	body, err := renderVerificationEmail(fmt.Sprintf("%s/auth/verify-email/%s", m.appBaseURL, verifyToken))
+	body, err := renderVerificationEmail(fmt.Sprintf("%s/verify-email/%s", m.appBaseURL, verifyToken))
 	if err != nil {
 		return err
 	}
