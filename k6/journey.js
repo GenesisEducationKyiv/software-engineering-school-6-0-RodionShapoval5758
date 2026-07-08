@@ -1,13 +1,19 @@
-// journey.js — full user lifecycle: subscribe → confirm → verify → unsubscribe.
+// journey.js — full user lifecycle: register → verify → login → subscribe →
+// confirm → verify listed → unsubscribe.
 //
 // Executor: per-vu-iterations (3 VUs × 5 iterations = 15 journeys total).
 // This is a correctness test under light concurrency, not a throughput test.
-// Each VU owns a unique email so there are no 409 conflicts.
+// Each iteration provisions its own account (register+verify+login), giving
+// every journey a distinct subscriber identity — a single shared account
+// would collapse all 15 journeys onto one email, and since they cycle
+// through only 10 repos (lib/data.js), some would collide and 409 instead of
+// exercising a fresh subscribe.
 //
 // Steps:
+//   0. provision  — register, scrape the verification email, verify, log in
 //   1. subscribe  — POST /api/subscribe  → expect 200
 //   2. confirm    — scrape confirm token from mailpit, GET /api/confirm/{token} → expect 200
-//   3. verify     — GET /api/subscriptions?email → expect confirmed:true
+//   3. verify     — GET /api/subscriptions → expect confirmed:true
 //   4. unsubscribe — unsubscribe token is only in *release* emails, which won't exist
 //                   in a test env. The step polls mailpit for an unsubscribe link;
 //                   if none is found it logs a skip rather than failing the journey.
@@ -18,13 +24,14 @@
 //
 // Prerequisites:
 //   - Mailpit reachable at MAILPIT_URL (default: http://localhost:8025)
-//   - MAIN_URL env var must match the URL the app uses in emails (default: http://localhost)
-//   - API_KEY set to match the running service
+//   - MAIN_URL env var (on the running services) must match the URL the app uses in emails
+//     (default: http://localhost)
 
 import http from 'k6/http';
 import { check, group, sleep } from 'k6';
 import { BASE_URL, authHeaders, jsonAuthHeaders } from './config.js';
-import { uniqueEmail, randomRepo } from './lib/data.js';
+import { provisionToken } from './lib/auth.js';
+import { randomRepo } from './lib/data.js';
 import { findMessage, getBody, extractToken } from './lib/mailpit.js';
 
 export const options = {
@@ -33,7 +40,7 @@ export const options = {
       executor: 'per-vu-iterations',
       vus: 3,
       iterations: 5,
-      maxDuration: '10m',  // generous — mailpit polling adds latency
+      maxDuration: '10m',  // generous — mailpit polling (x2: verify + confirm) adds latency
     },
   },
   thresholds: {
@@ -46,16 +53,26 @@ export const options = {
 };
 
 export default function () {
-  const email = uniqueEmail();
-  const repo  = randomRepo();
-  let   confirmToken = null;
+  const repo = randomRepo();
+  let token = null;
+  let email = null;
+  let confirmToken = null;
+
+  // ── 0. Provision a fresh, verified account ────────────────────────────────
+  group('provision-account', () => {
+    const session = provisionToken();
+    token = session.accessToken;
+    email = session.email;
+  });
+
+  if (!token) return;  // can't proceed without a session
 
   // ── 1. Subscribe ─────────────────────────────────────────────────────────
   group('subscribe', () => {
     const res = http.post(
       `${BASE_URL}/api/subscribe`,
-      JSON.stringify({ email, repo }),
-      { headers: jsonAuthHeaders }
+      JSON.stringify({ repo }),
+      { headers: jsonAuthHeaders(token) }
     );
 
     check(res, {
@@ -104,9 +121,7 @@ export default function () {
 
   // ── 4. Verify subscription appears as confirmed ───────────────────────────
   group('verify', () => {
-    const res = http.get(`${BASE_URL}/api/subscriptions?email=${encodeURIComponent(email)}`, {
-      headers: authHeaders,
-    });
+    const res = http.get(`${BASE_URL}/api/subscriptions`, { headers: authHeaders(token) });
 
     check(res, {
       'verify: status 200': (r) => r.status === 200,
@@ -161,10 +176,7 @@ export default function () {
 
     // Confirm the subscription is gone.
     if (res.status === 200) {
-      const verify = http.get(
-        `${BASE_URL}/api/subscriptions?email=${encodeURIComponent(email)}`,
-        { headers: authHeaders }
-      );
+      const verify = http.get(`${BASE_URL}/api/subscriptions`, { headers: authHeaders(token) });
       check(verify, {
         'unsubscribe: subscription removed': (r) => {
           try {

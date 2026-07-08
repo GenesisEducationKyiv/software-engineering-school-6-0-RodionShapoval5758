@@ -1,11 +1,11 @@
 version: '3'
 
 vars:
-  COMPOSE:        '{{.COMPOSE        | default "docker compose"}}'
-  K6_PROM_URL:    '{{.K6_PROM_URL    | default "http://localhost:9090/api/v1/write"}}'
-  K6_BASE_URL:    '{{.K6_BASE_URL    | default "http://localhost"}}'
-  K6_API_KEY:     '{{.K6_API_KEY     | default "genesis-summer-school"}}'
-  K6_TREND_STATS: '{{.K6_TREND_STATS | default "p(95),p(99),avg,min,max"}}'
+  COMPOSE:         '{{.COMPOSE         | default "docker compose"}}'
+  K6_PROM_URL:     '{{.K6_PROM_URL     | default "http://localhost:9090/api/v1/write"}}'
+  K6_BASE_URL:     '{{.K6_BASE_URL     | default "http://localhost"}}'
+  K6_MAILPIT_URL:  '{{.K6_MAILPIT_URL  | default "http://localhost:8025"}}'
+  K6_TREND_STATS:  '{{.K6_TREND_STATS  | default "p(95),p(99),avg,min,max"}}'
 
 tasks:
   proto:
@@ -130,7 +130,7 @@ tasks:
       K6_PROMETHEUS_RW_TREND_STATS: "{{.K6_TREND_STATS}}"
     cmds:
       - k6 run -o experimental-prometheus-rw --tag testid={{.TESTID}}
-          -e BASE_URL={{.K6_BASE_URL}} -e API_KEY={{.K6_API_KEY}} {{.SCRIPT}}
+          -e BASE_URL={{.K6_BASE_URL}} -e MAILPIT_URL={{.K6_MAILPIT_URL}} {{.SCRIPT}}
 
   k6-smoke:
     desc: Smoke test (with Prometheus remote write)
@@ -141,7 +141,7 @@ tasks:
   k6-smoke-ci:
     desc: Smoke test (CI mode, no Prometheus)
     cmds:
-      - k6 run -e BASE_URL={{.K6_BASE_URL}} -e API_KEY={{.K6_API_KEY}} k6/smoke.js
+      - k6 run -e BASE_URL={{.K6_BASE_URL}} -e MAILPIT_URL={{.K6_MAILPIT_URL}} k6/smoke.js
 
   k6-load:
     desc: Read load test
@@ -181,13 +181,9 @@ tasks:
 
   k6-journey:
     desc: Full user journey test (requires Mailpit)
-    env:
-      K6_PROMETHEUS_RW_SERVER_URL: "{{.K6_PROM_URL}}"
-      K6_PROMETHEUS_RW_TREND_STATS: "{{.K6_TREND_STATS}}"
     cmds:
-      - k6 run -o experimental-prometheus-rw --tag testid=journey
-          -e BASE_URL={{.K6_BASE_URL}} -e API_KEY={{.K6_API_KEY}}
-          -e MAILPIT_URL=http://localhost:8025 k6/journey.js
+      - task: _k6
+        vars: { TESTID: journey, SCRIPT: k6/journey.js }
 
   k6-suite:
     desc: Run smoke → load → stress → spike sequentially
