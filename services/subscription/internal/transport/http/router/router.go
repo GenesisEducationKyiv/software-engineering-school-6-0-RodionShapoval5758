@@ -18,7 +18,6 @@ type subscriptionHandler interface {
 	Confirm(http.ResponseWriter, *http.Request)
 	Unsubscribe(http.ResponseWriter, *http.Request)
 	ListSubscriptions(http.ResponseWriter, *http.Request)
-	ValidateAPIKey(http.ResponseWriter, *http.Request)
 }
 
 type Pinger interface {
@@ -61,7 +60,7 @@ func checkDep(ctx context.Context, p Pinger) string {
 	return "ok"
 }
 
-func New(handler subscriptionHandler, apiKey string, m *metrics.Metrics, db, nats Pinger) http.Handler {
+func New(handler subscriptionHandler, keys middleware.KeyProvider, m *metrics.Metrics, db, nats Pinger) http.Handler {
 	r := chi.NewRouter()
 
 	r.Use(middleware.SkipRoutes(middleware.Logger, "/metrics", "/health"))
@@ -71,20 +70,16 @@ func New(handler subscriptionHandler, apiKey string, m *metrics.Metrics, db, nat
 	r.Handle("/metrics", m.Handler())
 	r.Get("/health", healthHandler(db, nats))
 
-	if apiKey != "" {
-		r.Route("/api", func(r chi.Router) {
-			r.Use(middleware.AuthAPIKEY(apiKey))
+	r.Route("/api", func(r chi.Router) {
+		r.Group(func(r chi.Router) {
+			r.Use(middleware.AuthJWT(keys))
 			r.Post("/subscribe", handler.Subscribe)
 			r.Get("/subscriptions", handler.ListSubscriptions)
-			r.Get("/validate", handler.ValidateAPIKey)
 		})
-	} else {
-		r.Get("/api/subscriptions", handler.ListSubscriptions)
-		r.Post("/api/subscribe", handler.Subscribe)
-	}
 
-	r.Get("/api/unsubscribe/{token}", handler.Unsubscribe)
-	r.Get("/api/confirm/{token}", handler.Confirm)
+		r.Get("/unsubscribe/{token}", handler.Unsubscribe)
+		r.Get("/confirm/{token}", handler.Confirm)
+	})
 
 	return r
 }

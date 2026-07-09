@@ -10,6 +10,7 @@ const (
 	SubjectConfirmation = "notifications.confirmation"
 	SubjectRelease      = "notifications.release"
 	SubjectReleaseFound = "notifications.release_found"
+	SubjectVerifyEmail  = "notifications.verify_email"
 	SubjectAll          = "notifications.>"
 
 	StreamDLQ   = "NOTIFICATIONS_DLQ"
@@ -35,6 +36,11 @@ type EmailSent struct {
 type EmailFailed struct {
 	SagaID string `json:"saga_id"`
 	Reason string `json:"reason"`
+}
+
+type VerificationRequested struct {
+	Email       string `json:"email"`
+	VerifyToken string `json:"verify_token"`
 }
 
 type ReleaseDetected struct {

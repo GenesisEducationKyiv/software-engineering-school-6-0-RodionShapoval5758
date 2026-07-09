@@ -8,6 +8,10 @@
 // (default ≈ 8) has plenty of headroom. If this test fails thresholds, something
 // is seriously broken before you even get to stress testing.
 //
+// One shared account for the whole run: this test measures DB read throughput,
+// not auth throughput, and 3m is well under the access token's 15m TTL, so a
+// single token needs no refresh.
+//
 // Watch while running:
 //   RED dashboard  — request rate sits near 500/s; p95 should stay flat and low.
 //   USE dashboard  — db_pool_acquired_connections / db_pool_max_connections < 0.5.
@@ -16,6 +20,7 @@
 import http from 'k6/http';
 import { check } from 'k6';
 import { BASE_URL, authHeaders } from './config.js';
+import { provisionToken } from './lib/auth.js';
 
 export const options = {
   scenarios: {
@@ -35,9 +40,14 @@ export const options = {
   },
 };
 
-export default function () {
-  const res = http.get(`${BASE_URL}/api/subscriptions?email=load@test.com`, {
-    headers: authHeaders,
+export function setup() {
+  const { accessToken } = provisionToken();
+  return { token: accessToken };
+}
+
+export default function (data) {
+  const res = http.get(`${BASE_URL}/api/subscriptions`, {
+    headers: authHeaders(data.token),
   });
   check(res, { 'status 200': (r) => r.status === 200 });
 }

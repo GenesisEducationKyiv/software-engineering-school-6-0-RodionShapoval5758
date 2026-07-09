@@ -6,6 +6,9 @@ import (
 	"context"
 	"io"
 	"net/http/httptest"
+	"time"
+
+	"github.com/golang-jwt/jwt/v5"
 )
 
 type fakeGithubClient struct {
@@ -14,8 +17,23 @@ type fakeGithubClient struct {
 
 func (f *fakeGithubClient) CheckRepo(_ context.Context, _ string) error { return f.err }
 
+func (s *IntegrationSuite) authToken(email string) string {
+	now := time.Now()
+	tok := jwt.NewWithClaims(jwt.SigningMethodES256, jwt.MapClaims{
+		"sub":   "test-user",
+		"email": email,
+		"iat":   now.Unix(),
+		"exp":   now.Add(time.Hour).Unix(),
+	})
+
+	signed, err := tok.SignedString(s.signKey)
+	s.Require().NoError(err)
+
+	return signed
+}
+
 func (s *IntegrationSuite) do(method, path string, body io.Reader) *httptest.ResponseRecorder {
-	return s.doWithAuth(method, path, body, "Bearer "+testAPIKey)
+	return s.doWithAuth(method, path, body, "Bearer "+s.authToken("user@example.com"))
 }
 
 func (s *IntegrationSuite) doWithAuth(method, path string, body io.Reader, authHeader string) *httptest.ResponseRecorder {

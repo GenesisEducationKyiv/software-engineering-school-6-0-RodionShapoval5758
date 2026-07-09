@@ -1,33 +1,48 @@
-const BASE = '/api'
+import { authedFetch } from './auth/authedFetch'
 
-export async function validateKey(apiKey) {
-  return fetch(`${BASE}/validate`, {
-    headers: { 'Authorization': `Bearer ${apiKey}` },
+const API_BASE = '/api'
+const AUTH_BASE = '/auth'
+
+function postJSON(path, body) {
+  return fetch(path, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(body),
   })
 }
 
-export async function subscribe(email, repo, apiKey) {
-  const body = new URLSearchParams({ email, repo })
-  return fetch(`${BASE}/subscribe`, {
+export async function register(email, password) {
+  return postJSON(`${AUTH_BASE}/register`, { email, password })
+}
+
+export async function login(email, password) {
+  return postJSON(`${AUTH_BASE}/login`, { email, password })
+}
+
+export async function verifyEmail(token) {
+  return fetch(`${AUTH_BASE}/verify-email/${token}`)
+}
+
+export async function logout(refreshToken) {
+  return postJSON(`${AUTH_BASE}/logout`, { refresh_token: refreshToken })
+}
+
+export async function subscribe(repo) {
+  return authedFetch(`${API_BASE}/subscribe`, {
     method: 'POST',
-    headers: {
-      'Content-Type': 'application/x-www-form-urlencoded',
-      'Authorization': `Bearer ${apiKey}`,
-    },
-    body,
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ repo }),
   })
+}
+
+export async function getSubscriptions() {
+  return authedFetch(`${API_BASE}/subscriptions`)
 }
 
 export async function confirmSubscription(token) {
-  return fetch(`${BASE}/confirm/${token}`)
+  return fetch(`${API_BASE}/confirm/${token}`)
 }
 
 export async function unsubscribe(token) {
-  return fetch(`${BASE}/unsubscribe/${token}`)
-}
-
-export async function getSubscriptions(email, apiKey) {
-  return fetch(`${BASE}/subscriptions?email=${encodeURIComponent(email)}`, {
-    headers: { 'Authorization': `Bearer ${apiKey}` },
-  })
+  return fetch(`${API_BASE}/unsubscribe/${token}`)
 }

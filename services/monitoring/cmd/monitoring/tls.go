@@ -2,28 +2,16 @@ package main
 
 import (
 	"crypto/tls"
-	"crypto/x509"
-	"errors"
 	"fmt"
-	"os"
 
+	"GithubReleaseNotificationAPI/contract/tlsutil"
 	monconfig "GithubReleaseNotificationAPI/services/monitoring/internal/config"
 )
 
 func newGRPCClientTLSConfig(cfg *monconfig.Config) (*tls.Config, error) {
-	cert, err := tls.LoadX509KeyPair(cfg.GRPCTLSCert, cfg.GRPCTLSKey)
+	cert, caPool, err := tlsutil.LoadCertPool(cfg.GRPCTLSCert, cfg.GRPCTLSKey, cfg.GRPCTLSCACert)
 	if err != nil {
-		return nil, fmt.Errorf("load grpc client cert: %w", err)
-	}
-
-	caPEM, err := os.ReadFile(cfg.GRPCTLSCACert)
-	if err != nil {
-		return nil, fmt.Errorf("read grpc ca cert: %w", err)
-	}
-
-	caPool := x509.NewCertPool()
-	if !caPool.AppendCertsFromPEM(caPEM) {
-		return nil, errors.New("parse grpc ca cert: invalid PEM")
+		return nil, fmt.Errorf("grpc client tls: %w", err)
 	}
 
 	return &tls.Config{

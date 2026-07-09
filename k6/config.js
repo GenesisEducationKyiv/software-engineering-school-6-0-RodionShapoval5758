@@ -1,14 +1,14 @@
 export const BASE_URL = __ENV.BASE_URL || 'http://localhost';
 export const MAILPIT_URL = __ENV.MAILPIT_URL || 'http://localhost:8025';
 
-const apiKey = __ENV.API_KEY || 'genesis-summer-school';
+// There is no more static shared API key — the subscription service now
+// requires a real JWT issued by the auth service (see lib/auth.js for how
+// tests obtain one). These builders take that token per call since it's
+// provisioned dynamically, not read from an env var.
+export function authHeaders(token) {
+  return { Authorization: `Bearer ${token}` };
+}
 
-export const authHeaders = {
-  Authorization: `Bearer ${apiKey}`,
-};
-
-// For POST/PUT requests that also carry a JSON body.
-export const jsonAuthHeaders = {
-  'Content-Type': 'application/json',
-  Authorization: `Bearer ${apiKey}`,
-};
+export function jsonAuthHeaders(token) {
+  return { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` };
+}

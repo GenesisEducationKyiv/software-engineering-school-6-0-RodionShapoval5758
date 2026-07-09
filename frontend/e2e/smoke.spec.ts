@@ -1,6 +1,6 @@
 import { test, expect } from '@playwright/test'
 
-test('home page loads', async ({ page }) => {
+test('unauthenticated visitor is redirected to login', async ({ page }) => {
   await page.goto('/')
-  await expect(page.getByText('GitHub Release Notifications')).toBeVisible()
+  await expect(page.getByRole('heading', { name: 'Log in' })).toBeVisible()
 })

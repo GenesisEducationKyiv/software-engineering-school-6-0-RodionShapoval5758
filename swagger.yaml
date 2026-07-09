@@ -16,14 +16,14 @@ securityDefinitions:
     type: "apiKey"
     in: "header"
     name: "Authorization"
-    description: "Bearer token. Example: 'Bearer <api-key>'"
+    description: "JWT access token issued by the auth service. Example: 'Bearer <jwt>'. The token's email claim identifies the subscriber."
 paths:
   /subscribe:
     post:
       tags:
         - "subscription"
       summary: "Subscribe to release notifications"
-      description: "Subscribe an email to receive notifications about new releases of a GitHub repository. The repository is validated via GitHub API. Also accepts application/x-www-form-urlencoded with the same fields."
+      description: "Subscribe the authenticated user's email to receive notifications about new releases of a GitHub repository. The email is taken from the JWT, not the request body. The repository is validated via GitHub API. Also accepts application/x-www-form-urlencoded with the same fields."
       operationId: "subscribe"
       security:
         - BearerAuth: []
@@ -41,9 +41,9 @@ paths:
         "200":
           description: "Subscription successful. Confirmation email sent."
         "400":
-          description: "Invalid input (e.g., invalid email or repo format)"
+          description: "Invalid input (e.g., invalid repo format)"
         "401":
-          description: "Missing or invalid API key"
+          description: "Missing or invalid JWT"
         "404":
           description: "Repository not found on GitHub"
         "409":
@@ -100,17 +100,11 @@ paths:
     get:
       tags:
         - "subscription"
-      summary: "Get subscriptions for an email"
-      description: "Returns all active subscriptions for the given email address."
+      summary: "Get subscriptions for the authenticated user"
+      description: "Returns all active subscriptions for the email in the JWT."
       operationId: "getSubscriptions"
       security:
         - BearerAuth: []
-      parameters:
-        - name: "email"
-          in: "query"
-          description: "Email address to look up subscriptions for"
-          required: true
-          type: "string"
       produces:
         - "application/json"
       responses:
@@ -120,37 +114,14 @@ paths:
             type: "array"
             items:
               $ref: "#/definitions/Subscription"
-        "400":
-          description: "Invalid email"
         "401":
-          description: "Missing or invalid API key"
-  /validate:
-    get:
-      tags:
-        - "subscription"
-      summary: "Validate API key"
-      description: "Returns 200 if the provided API key is valid. Useful for health-checking auth from clients."
-      operationId: "validateAPIKey"
-      security:
-        - BearerAuth: []
-      produces:
-        - "application/json"
-      responses:
-        "200":
-          description: "API key is valid"
-        "401":
-          description: "Missing or invalid API key"
+          description: "Missing or invalid JWT"
 definitions:
   SubscribeRequest:
     type: "object"
     required:
-      - "email"
       - "repo"
     properties:
-      email:
-        type: "string"
-        description: "Email address to subscribe"
-        example: "user@example.com"
       repo:
         type: "string"
         description: "GitHub repository in owner/repo format"

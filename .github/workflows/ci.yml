@@ -81,9 +81,9 @@ jobs:
       - name: Generate mTLS certs
         run: task certs-gen
       - name: Start stack
-        run: API_KEY=test-api-key docker compose up -d --wait --build
+        run: docker compose up -d --wait --build
       - name: Run smoke test
-        run: task k6-smoke-ci K6_API_KEY=test-api-key
+        run: task k6-smoke-ci
       - name: Teardown stack
         if: always()
         run: docker compose down -v
@@ -114,4 +114,10 @@ jobs:
         with:
           version: v2.11.4
           args: --config=.golangci.yaml ./services/notification/...
+          working-directory: .
+      - name: Lint auth service
+        uses: golangci/golangci-lint-action@v9
+        with:
+          version: v2.11.4
+          args: --config=.golangci.yaml ./services/auth/...
           working-directory: .

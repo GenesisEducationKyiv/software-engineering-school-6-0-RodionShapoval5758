@@ -6,6 +6,16 @@
 // and asserts on the *expected* outcome distribution (200, 409, 429 each mean
 // something specific — none are silent failures; 5xx is the real alarm).
 //
+// Each iteration provisions its own account (register→verify→login) rather
+// than sharing one setup()-token. A shared identity would collapse every
+// subscribe onto one email, and with only 10 repos in lib/data.js to cycle
+// through across ~180 iterations, most calls would 409 instead of exercising
+// a genuinely new (email, repo) pair — defeating the point of a write-load
+// test. The provisioning handshake (with its Mailpit round-trip) runs in its
+// own group and isn't counted in subscribe_duration_ms, which only measures
+// the subscribe call itself; preAllocatedVUs/maxVUs are sized up accordingly
+// to absorb the extra per-iteration latency.
+//
 // Custom outcome counters appear in the k6 dashboard under:
 //   subscribe_created_total    — fresh subscribe succeeded (200)
 //   subscribe_conflict_total   — email+repo already subscribed (409)
@@ -20,7 +30,8 @@ import http from 'k6/http';
 import { check, group } from 'k6';
 import { Counter, Trend } from 'k6/metrics';
 import { BASE_URL, jsonAuthHeaders } from './config.js';
-import { uniqueEmail, randomRepo } from './lib/data.js';
+import { provisionToken } from './lib/auth.js';
+import { randomRepo } from './lib/data.js';
 
 // Per-outcome counters — each outcome is semantically distinct.
 const created        = new Counter('subscribe_created_total');
@@ -40,8 +51,8 @@ export const options = {
       rate: 1,           // 1 RPS — well under the 1.4 RPS GitHub rate limit
       timeUnit: '1s',
       duration: '3m',
-      preAllocatedVUs: 5,
-      maxVUs: 10,
+      preAllocatedVUs: 10,  // bumped from 5: each iteration now also pays for
+      maxVUs: 30,           // a register→verify→login handshake before subscribing
     },
   },
   thresholds: {
@@ -55,14 +66,18 @@ export const options = {
 };
 
 export default function () {
-  const email = uniqueEmail();
-  const repo  = randomRepo();
+  const repo = randomRepo();
+  let token;
+
+  group('provision-account', () => {
+    token = provisionToken().accessToken;
+  });
 
   group('subscribe', () => {
     const res = http.post(
       `${BASE_URL}/api/subscribe`,
-      JSON.stringify({ email, repo }),
-      { headers: jsonAuthHeaders }
+      JSON.stringify({ repo }),
+      { headers: jsonAuthHeaders(token) }
     );
 
     subscribeDuration.add(res.timings.duration);
