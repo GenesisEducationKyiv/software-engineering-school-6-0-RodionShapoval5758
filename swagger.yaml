@@ -1,11 +1,12 @@
 swagger: "2.0"
 info:
-  description: "GitHub Release Notification API that allows users to subscribe to email notifications about new releases of a chosen GitHub repository."
+  description: "GitHub Release Notification API that allows users to register, log in, subscribe to email notifications about new releases of a chosen GitHub repository, and manage those subscriptions."
   version: "1.0.0"
   title: "GitHub Release Notification API"
 host: "releases-api.app"
-basePath: "/api"
 tags:
+  - name: "auth"
+    description: "Account registration, email verification, and JWT session management"
   - name: "subscription"
     description: "Subscription management operations"
 schemes:
@@ -16,14 +17,158 @@ securityDefinitions:
     type: "apiKey"
     in: "header"
     name: "Authorization"
-    description: "JWT access token issued by the auth service. Example: 'Bearer <jwt>'. The token's email claim identifies the subscriber."
+    description: "JWT access token issued by POST /auth/login (or /auth/refresh). Example: 'Bearer <jwt>'. The token's email claim identifies the subscriber."
 paths:
-  /subscribe:
+  /auth/register:
+    post:
+      tags:
+        - "auth"
+      summary: "Register a new account"
+      description: "Creates an unverified account and emails a verification link. Login is blocked until the email is verified."
+      operationId: "register"
+      consumes:
+        - "application/json"
+      produces:
+        - "application/json"
+      parameters:
+        - in: "body"
+          name: "body"
+          required: true
+          schema:
+            $ref: "#/definitions/RegisterRequest"
+      responses:
+        "201":
+          description: "Registered. Verification email sent."
+          schema:
+            $ref: "#/definitions/MessageResponse"
+        "400":
+          description: "Invalid email format or password shorter than 8 characters"
+          schema:
+            $ref: "#/definitions/ErrorResponse"
+        "409":
+          description: "Email is already registered"
+          schema:
+            $ref: "#/definitions/ErrorResponse"
+  /auth/verify-email/{token}:
+    get:
+      tags:
+        - "auth"
+      summary: "Verify an email address"
+      description: "Confirms the account using the token sent in the verification email. Required before login is allowed."
+      operationId: "verifyEmail"
+      parameters:
+        - name: "token"
+          in: "path"
+          description: "Verification token"
+          required: true
+          type: "string"
+      produces:
+        - "application/json"
+      responses:
+        "200":
+          description: "Email verified. Login is now allowed."
+          schema:
+            $ref: "#/definitions/MessageResponse"
+        "400":
+          description: "Invalid token"
+          schema:
+            $ref: "#/definitions/ErrorResponse"
+        "404":
+          description: "Token not found"
+          schema:
+            $ref: "#/definitions/ErrorResponse"
+        "410":
+          description: "Token expired or already used"
+          schema:
+            $ref: "#/definitions/ErrorResponse"
+  /auth/login:
+    post:
+      tags:
+        - "auth"
+      summary: "Log in"
+      description: "Exchanges verified credentials for a JWT access token and an opaque refresh token."
+      operationId: "login"
+      consumes:
+        - "application/json"
+      produces:
+        - "application/json"
+      parameters:
+        - in: "body"
+          name: "body"
+          required: true
+          schema:
+            $ref: "#/definitions/LoginRequest"
+      responses:
+        "200":
+          description: "Login successful"
+          schema:
+            $ref: "#/definitions/TokenPair"
+        "400":
+          description: "Invalid request body"
+          schema:
+            $ref: "#/definitions/ErrorResponse"
+        "401":
+          description: "Invalid email or password, or the email is not verified yet"
+          schema:
+            $ref: "#/definitions/ErrorResponse"
+  /auth/refresh:
+    post:
+      tags:
+        - "auth"
+      summary: "Refresh a session"
+      description: "Rotates a refresh token for a new access/refresh pair. The old refresh token is revoked on use."
+      operationId: "refresh"
+      consumes:
+        - "application/json"
+      produces:
+        - "application/json"
+      parameters:
+        - in: "body"
+          name: "body"
+          required: true
+          schema:
+            $ref: "#/definitions/RefreshRequest"
+      responses:
+        "200":
+          description: "Refresh successful"
+          schema:
+            $ref: "#/definitions/TokenPair"
+        "400":
+          description: "Missing or invalid request body"
+          schema:
+            $ref: "#/definitions/ErrorResponse"
+        "401":
+          description: "Invalid, expired, or already-rotated refresh token"
+          schema:
+            $ref: "#/definitions/ErrorResponse"
+  /auth/logout:
+    post:
+      tags:
+        - "auth"
+      summary: "Log out"
+      description: "Revokes the given refresh token."
+      operationId: "logout"
+      consumes:
+        - "application/json"
+      parameters:
+        - in: "body"
+          name: "body"
+          required: true
+          schema:
+            $ref: "#/definitions/RefreshRequest"
+      responses:
+        "204":
+          description: "Logged out"
+        "400":
+          description: "Missing or invalid request body"
+          schema:
+            $ref: "#/definitions/ErrorResponse"
+  /api/subscribe:
     post:
       tags:
         - "subscription"
       summary: "Subscribe to release notifications"
-      description: "Subscribe the authenticated user's email to receive notifications about new releases of a GitHub repository. The email is taken from the JWT, not the request body. The repository is validated via GitHub API. Also accepts application/x-www-form-urlencoded with the same fields."
+      description: "Subscribe the authenticated user's email to receive notifications about new releases of a GitHub repository. The email is taken from the JWT, not the request body. The repository is validated via GitHub API. Also accepts application/x-www-form-urlencoded with the same field."
       operationId: "subscribe"
       security:
         - BearerAuth: []
@@ -52,7 +197,7 @@ paths:
           description: "GitHub API rate limit reached"
         "502":
           description: "GitHub API token is invalid or expired"
-  /confirm/{token}:
+  /api/confirm/{token}:
     get:
       tags:
         - "subscription"
@@ -74,7 +219,7 @@ paths:
           description: "Invalid token"
         "404":
           description: "Token not found"
-  /unsubscribe/{token}:
+  /api/unsubscribe/{token}:
     get:
       tags:
         - "subscription"
@@ -96,7 +241,7 @@ paths:
           description: "Invalid token"
         "404":
           description: "Token not found"
-  /subscriptions:
+  /api/subscriptions:
     get:
       tags:
         - "subscription"
@@ -117,6 +262,59 @@ paths:
         "401":
           description: "Missing or invalid JWT"
 definitions:
+  RegisterRequest:
+    type: "object"
+    required:
+      - "email"
+      - "password"
+    properties:
+      email:
+        type: "string"
+        example: "you@example.com"
+      password:
+        type: "string"
+        format: "password"
+        description: "Minimum 8 characters"
+        example: "correct-horse-battery-staple"
+  LoginRequest:
+    type: "object"
+    required:
+      - "email"
+      - "password"
+    properties:
+      email:
+        type: "string"
+        example: "you@example.com"
+      password:
+        type: "string"
+        format: "password"
+  RefreshRequest:
+    type: "object"
+    required:
+      - "refresh_token"
+    properties:
+      refresh_token:
+        type: "string"
+        description: "Opaque refresh token returned by /auth/login or a prior /auth/refresh"
+  TokenPair:
+    type: "object"
+    properties:
+      access_token:
+        type: "string"
+        description: "ES256 JWT, 15-minute default TTL. Carries the user's email in the 'email' claim."
+      refresh_token:
+        type: "string"
+        description: "Opaque token, 30-day default TTL. Single-use — rotated on every /auth/refresh call."
+  MessageResponse:
+    type: "object"
+    properties:
+      message:
+        type: "string"
+  ErrorResponse:
+    type: "object"
+    properties:
+      error:
+        type: "string"
   SubscribeRequest:
     type: "object"
     required:

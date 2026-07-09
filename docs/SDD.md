@@ -1,7 +1,7 @@
 # System Design Document
 
 ## 1. Overview
-This project is a GitHub release notification system built as three independently deployable Go services. Users subscribe an email to a GitHub repository, confirm the subscription through a tokenized link, and receive notifications when the system detects a new release. The services communicate asynchronously through NATS JetStream.
+This project is a GitHub release notification system built as four independently deployable Go services. Users register an account and verify it by email, subscribe that account to a GitHub repository, confirm the subscription through a tokenized link, and receive notifications when the system detects a new release. The services communicate asynchronously through NATS JetStream; Subscription verifies user identity via JWTs issued by the Auth service.
 
 ## 2. Context and Problem
 The problem is to notify users by email when a GitHub repository publishes a new release. Without such a service, users must manually check repositories.
@@ -12,19 +12,22 @@ Original constraints that shaped the initial design:
 - release detection must happen through periodic background scanning
 - users must confirm subscriptions and be able to unsubscribe safely
 
-The system evolved from a monolith into three bounded services in four phases:
+The system evolved from a monolith in five phases:
 - **Phase 1** — Extracted the monitoring worker into its own deployable (`services/monitoring`)
 - **Phase 2** — Monitoring became fully event-driven: owns `scan_cursors` + `monitoring_outbox`, emits `ReleaseFound` via its own outbox relay
 - **Phase 3** — Dissolved the monolith: renamed to `services/subscription`, wired nginx to the new service name
 - **Phase 4** — Monitoring switched from NATS tracking events to a gRPC `CatalogService` call on the subscription service for the repo list; `RepoTracked`/`RepoUntracked` events and the `TRACKING` stream removed
+- **Phase 5** — Extracted account management into `services/auth`: registration, email verification, login, and JWT issuance. Subscription dropped the static `API_KEY` guard in favor of verifying JWTs locally (ES256), fetching Auth's public signing key once over mTLS gRPC. Auth runs against its own Postgres instance so password hashes stay in a separate failure/backup domain from subscription data.
 
 ## 3. Requirements
 ### Functional Requirements
+- Allow users to register an account (email + password), verify the email via a tokenized link, and log in to receive a JWT access/refresh token pair
+- Block login until the account's email is verified
 - Allow clients to create subscriptions for GitHub repositories in `owner/repo` format
 - Validate email input and repository format before creating a subscription
 - Verify repository existence through the GitHub API before persisting a subscription
-- Require `Authorization: Bearer <API_KEY>` for `POST /api/subscribe` and `GET /api/subscriptions` when the `API_KEY` environment variable is set
-- Create pending subscriptions with confirmation and unsubscribe tokens, confirm them, list them by email, and remove them through unsubscribe token
+- Require a valid JWT (`Authorization: Bearer <token>`) for `POST /api/subscribe` and `GET /api/subscriptions`; the subscriber's email comes from the token's `email` claim, not the request
+- Create pending subscriptions with confirmation and unsubscribe tokens, confirm them, list them by the authenticated user's email, and remove them through unsubscribe token
 - Run schema migrations automatically on service startup (each service runs its own migrations)
 - Periodically scan tracked repositories for releases in the background
 - Detect genuinely new releases and avoid repeated notifications for unchanged release tags
@@ -41,12 +44,20 @@ The system evolved from a monolith into three bounded services in four phases:
 
 ## 4. High-Level Architecture
 
-Three services, one nginx edge, one NATS broker, one PostgreSQL instance:
+Four services, one nginx edge, one NATS broker, two PostgreSQL instances (Auth has its own):
 
 ```mermaid
 flowchart TB
     Client[Client] -->|HTTP| nginx[nginx]
     nginx -->|proxy /api/| HTTP
+    nginx -->|proxy /auth/| AuthHTTP
+
+    subgraph auth["Auth Service"]
+        direction TB
+        AuthHTTP[HTTP Server]
+        AuthGRPC[gRPC Server]
+        AuthRelay[Outbox Relay]
+    end
 
     subgraph subscription["Subscription Service"]
         direction TB
@@ -56,6 +67,7 @@ flowchart TB
         Relay1[Outbox Relay]
         SagaCons[Saga Consumer]
         SagaReaper[Saga Reaper]
+        AuthClient[Auth gRPC Client\ncaches signing key]
     end
 
     subgraph monitoring["Monitoring Service (replicas=1)"]
@@ -68,6 +80,14 @@ flowchart TB
         direction TB
         NotifConsumer[NATS Consumer]
         Mailer[Mailer]
+    end
+
+    subgraph authdb["Auth Tables (separate Postgres instance)"]
+        direction LR
+        users[(users)]
+        verif[(email_verifications)]
+        refresh[(refresh_tokens)]
+        authoutbox[(outbox)]
     end
 
     subgraph subcore["Subscription Core Tables"]
@@ -92,8 +112,14 @@ flowchart TB
     GitHub[GitHub API]
     SMTP[SMTP]
 
+    %% Auth service → its tables
+    AuthHTTP --> users & verif & refresh & authoutbox
+    AuthRelay --> authoutbox
+    AuthGRPC -.->|serves signing key, mTLS| AuthClient
+
     %% Subscription service → its tables
     HTTP --> repos & subs & outboxt & sagas
+    HTTP -.->|verifies JWT locally| AuthClient
     GRPC --> repos
     FW --> subs & outboxt & repos
     Relay1 --> outboxt
@@ -107,10 +133,11 @@ flowchart TB
     Scanner -->|gRPC ListTrackedRepos| GRPC
 
     %% NATS event bus
+    AuthRelay -->|publish| NATS
     Relay1 -->|publish| NATS
     Relay2 -->|publish| NATS
     NATS -->|ReleaseFound| FW
-    NATS -->|ConfirmationRequested / ReleaseDetected| NotifConsumer
+    NATS -->|ConfirmationRequested / ReleaseDetected / VerificationRequested| NotifConsumer
     NATS -->|EmailSent / EmailFailed| SagaCons
 
     %% Notification service
@@ -122,7 +149,7 @@ flowchart TB
 
 | Stream | Subjects | Retention | Producer | Consumer |
 |---|---|---|---|---|
-| `NOTIFICATIONS` | `notifications.>` | WorkQueue | Subscription relay, Monitoring relay | Notification svc, Subscription fanout |
+| `NOTIFICATIONS` | `notifications.>` | WorkQueue | Auth relay, Subscription relay, Monitoring relay | Notification svc, Subscription fanout |
 | `NOTIFICATIONS_DLQ` | `dlq.notifications` | Limits | Notification svc | — |
 | `SAGA` | `saga.>` | Limits | Notification svc | Subscription saga consumer |
 
@@ -130,6 +157,7 @@ flowchart TB
 
 | Subject | Emitted by | Consumed by | Description |
 |---|---|---|---|
+| `notifications.verify_email` | Auth | Notification | Email-verification link for a new registration |
 | `notifications.confirmation` | Subscription | Notification | Email confirmation link (carries `saga_id`) |
 | `notifications.release` | Subscription | Notification | Per-recipient release email |
 | `notifications.release_found` | Monitoring | Subscription | Repo-level new release event |
@@ -139,8 +167,11 @@ flowchart TB
 
 ## 5. Main Components
 
+### Auth Service (`services/auth`)
+Owns account registration, email verification, login, and JWT issuance, against its own Postgres instance. `POST /register` creates an unverified user and writes a `VerificationRequested` outbox entry in the same transaction. `GET /verify-email/{token}` flips `users.email_verified`. `POST /login` is rejected with 401 until the email is verified; on success it issues an ES256 JWT access token (claims: `sub`, `email`, `iat`, `exp`; 15-minute default TTL) plus an opaque, sha256-hashed refresh token (30-day default TTL, single-use — rotated on every `/refresh` call). Exposes a gRPC `GetSigningKey` method (mTLS) that returns the current public signing key PEM + `kid`, which Subscription fetches once at startup and refreshes every 15 minutes to verify JWTs locally without a runtime call to Auth.
+
 ### Subscription Service (`services/subscription`)
-Owns the REST API, subscription lifecycle, fan-out, and the subscribe saga orchestrator. Serves all four endpoints. On subscribe, writes a pending subscription, a saga row, and a `ConfirmationRequested` outbox entry in a single transaction. Runs the fanout NATS consumer: receives `ReleaseFound`, lists confirmed subscribers, and inserts per-recipient `ReleaseDetected` outbox rows in a single transaction. Also runs the saga reply consumer and a TTL reaper (see Subscribe Saga below). Exposes a gRPC `CatalogService` that returns all tracked repositories to the monitoring service.
+Owns the REST API, subscription lifecycle, fan-out, and the subscribe saga orchestrator. Verifies the caller's JWT locally (ES256, against the cached Auth signing key) on `POST /subscribe` and `GET /subscriptions`; the subscriber's email comes from the token's `email` claim, not the request. On subscribe, writes a pending subscription, a saga row, and a `ConfirmationRequested` outbox entry in a single transaction. Runs the fanout NATS consumer: receives `ReleaseFound`, lists confirmed subscribers, and inserts per-recipient `ReleaseDetected` outbox rows in a single transaction. Also runs the saga reply consumer and a TTL reaper (see Subscribe Saga below). Exposes a gRPC `CatalogService` that returns all tracked repositories to the monitoring service.
 
 ### Monitoring Service (`services/monitoring`, `replicas: 1`)
 Owns GitHub scanning and release detection. On each tick, calls the subscription service's gRPC `CatalogService.ListTrackedRepos` to get the current repo list, then reads each repo's `last_seen_tag` from its local `scan_cursors` table. Scans up to 10 repos concurrently against GitHub. On a new tag, atomically advances the cursor and inserts `ReleaseFound` into `monitoring_outbox` in a single transaction. The outbox relay publishes to NATS.
@@ -149,15 +180,50 @@ Owns GitHub scanning and release detection. On each tick, calls the subscription
 Stateless email sender. Consumes `ConfirmationRequested` and `ReleaseDetected` from the `NOTIFICATIONS` stream. Renders and delivers via SMTP. On transient SMTP failure, NAKs so the message is redelivered. On unmarshal failure, terminates the message and writes to the DLQ stream.
 
 ### Transactional Outbox
-Both Subscription and Monitoring use the same pattern: state changes and "intent to publish" are committed in one database transaction. A relay goroutine polls for unpublished rows with `FOR UPDATE SKIP LOCKED`, publishes to NATS with a stable `Msg-Id` header for server-side deduplication, and marks rows published. This provides at-least-once delivery with bounded duplication, with no event loss on process restart.
+Auth, Subscription, and Monitoring all use the same pattern: state changes and "intent to publish" are committed in one database transaction. A relay goroutine polls for unpublished rows with `FOR UPDATE SKIP LOCKED`, publishes to NATS with a stable `Msg-Id` header for server-side deduplication, and marks rows published. This provides at-least-once delivery with bounded duplication, with no event loss on process restart.
 
 ### Subscribe Saga Orchestrator
 A coordinated (orchestration-based) saga that drives the subscribe workflow as a recoverable multi-step transaction. Saga state is persisted in `subscribe_sagas`. Three goroutines handle it: the outbox relay (publishes the initial events), the saga reply consumer (processes `EmailSent`/`EmailFailed` from NATS), and the reaper (polls for expired sagas every 30 s). See section 6 for the full flow.
 
 ### nginx
-Edge proxy. Routes `/api/` to the Subscription service. Serves static assets from its document root.
+Edge proxy. Routes `/api/` to the Subscription service and `/auth/` to the Auth service (prefix stripped). Serves the built frontend SPA as static assets from its document root.
 
 ## 6. Key Workflows
+
+### Register, Verify, and Log In
+```mermaid
+sequenceDiagram
+    actor User
+    participant nginx
+    participant AuthSvc as Auth Svc
+    participant DB as Auth DB
+    participant Relay as Auth Outbox Relay
+    participant NATS
+    participant Notif as Notification Svc
+    participant SMTP
+
+    User->>nginx: POST /auth/register {email, password}
+    nginx->>AuthSvc: forward (prefix stripped)
+    AuthSvc->>DB: [tx] INSERT users(email_verified=false)\n+ INSERT email_verifications(token)\n+ INSERT outbox(VerificationRequested)
+    Relay->>DB: FetchForUpdate (SKIP LOCKED)
+    Relay->>NATS: publish notifications.verify_email
+    Relay->>DB: MarkPublished
+    NATS->>Notif: VerificationRequested
+    Notif->>SMTP: Send verification email
+
+    Note over User: User clicks the verification link
+    User->>nginx: GET /auth/verify-email/{token}
+    nginx->>AuthSvc: forward
+    AuthSvc->>DB: mark email_verifications.used_at\n+ UPDATE users.email_verified = true
+
+    User->>nginx: POST /auth/login {email, password}
+    nginx->>AuthSvc: forward
+    AuthSvc->>DB: verify password hash, check email_verified
+    AuthSvc->>DB: INSERT refresh_tokens (hashed)
+    AuthSvc-->>User: 200 {access_token, refresh_token}
+
+    Note over User: access_token is sent as Authorization: Bearer\nto /api/subscribe and /api/subscriptions
+```
 
 ### Subscribe and Confirm Flow (with Saga)
 ```mermaid
@@ -280,6 +346,10 @@ sequenceDiagram
 
 | Table | Owner | Purpose |
 |---|---|---|
+| `users` | Auth | Account identity, password hash, email-verified flag |
+| `email_verifications` | Auth | One-time email verification tokens |
+| `refresh_tokens` | Auth | Hashed, single-use refresh tokens (rotated on use) |
+| `outbox` (auth DB) | Auth | Outbox relay table for auth events (`VerificationRequested`) |
 | `repositories` | Subscription | Repo registry (find-or-create, orphan cleanup) |
 | `subscriptions` | Subscription | Subscription lifecycle, tokens, confirmed flag |
 | `outbox` | Subscription | Outbox relay table for subscription events |
@@ -287,12 +357,51 @@ sequenceDiagram
 | `scan_cursors` | Monitoring | Per-repo `last_seen_tag` + `full_name` for the scanner |
 | `monitoring_outbox` | Monitoring | Outbox relay table for monitoring events |
 
+Auth runs against its own, physically separate Postgres instance (`postgres_auth_db` in `compose.yaml`) — not just a separate schema — so password hashes and refresh tokens live in a distinct failure/backup domain from subscription/monitoring data. Its `outbox` table happens to share a name with Subscription's, which is fine since they're different database instances.
+
 Monitoring migrations are tracked in `monitoring_schema_migrations` to avoid collision when both services run migrations against the same Postgres instance.
 
 ### Schema
 
 ```mermaid
 erDiagram
+    %% Auth DB — physically separate Postgres instance from everything below
+    users {
+        uuid id PK
+        text email UK "NOT NULL"
+        text password_hash "NOT NULL"
+        boolean email_verified "NOT NULL DEFAULT false"
+        timestamptz created_at
+    }
+
+    email_verifications {
+        text token PK
+        uuid user_id FK "ON DELETE CASCADE"
+        timestamptz expires_at "NOT NULL"
+        timestamptz used_at "nullable"
+    }
+
+    refresh_tokens {
+        uuid id PK
+        uuid user_id FK "ON DELETE CASCADE"
+        text token_hash UK "NOT NULL, sha256 of the opaque token"
+        timestamptz expires_at "NOT NULL"
+        timestamptz revoked_at "nullable"
+        timestamptz created_at
+    }
+
+    auth_outbox {
+        bigserial id PK
+        text subject "NOT NULL — real table name is just 'outbox' in the auth DB"
+        bytea payload "NOT NULL"
+        timestamptz created_at "NOT NULL"
+        timestamptz published_at "NULL = pending"
+    }
+
+    users ||--o{ email_verifications : "verifies"
+    users ||--o{ refresh_tokens : "issued to"
+
+    %% Subscription + Monitoring DB
     repositories {
         bigserial id PK
         varchar name UK "owner/repo, NOT NULL"
@@ -423,7 +532,7 @@ flowchart TB
 - permanent failures result in the message being terminated and written to the DLQ
 
 ### Database
-- single Postgres instance shared by all services
+- Subscription and Monitoring share one Postgres instance; Auth runs its own, separate instance
 - each service runs its own migrations on startup; tracking tables are separate
 - `FOR UPDATE SKIP LOCKED` in outbox relays allows safe concurrent relay
 
@@ -432,13 +541,13 @@ flowchart TB
 - **Saga reply is not outboxed on the Notification side**: `EmailSent`/`EmailFailed` are published directly by the Notification service without a DB-backed outbox. If NATS is briefly unavailable at the moment of publish the saga reply may be lost. The orchestrator's idempotent state transitions prevent double-compensation, but a lost reply leaves the saga stuck in `STARTED` until the TTL reaper fires.
 - **Orphaned `scan_cursors` on unsubscribe**: When all subscribers are removed and the repository row is deleted, the corresponding `scan_cursors` row is not cleaned up. The orphaned cursor is harmless (monitoring won't see the repo in `ListTrackedRepos`) but accumulates over time.
 - **`repositories.last_seen_tag` is never written**: The column exists and is returned by the list endpoint but is always empty. It is a candidate for a future cleanup migration.
-- **No physical DB isolation**: Services share one Postgres instance; ownership is enforced by code only.
+- **No physical DB isolation between Subscription and Monitoring**: they share one Postgres instance; ownership is enforced by code only. (Auth is already isolated on its own instance.)
 
 ## 10. Tradeoffs and Future Evolution
 
 Current design tradeoffs:
 - **Event-driven via NATS**: decouples services and provides at-least-once delivery, but adds operational complexity and eventual consistency
-- **Shared Postgres**: reduces ops overhead vs separate databases, but services are not isolated at the persistence layer
+- **Shared Postgres for Subscription + Monitoring**: reduces ops overhead vs separate databases, but the two services are not isolated at the persistence layer (Auth already gets its own instance, at the cost of one more Postgres to operate)
 - **Monitoring singleton**: avoids duplicate GitHub polling and race conditions on `scan_cursors`, but limits horizontal scale
 - **Polling instead of webhooks**: works for any public repo without admin access, but notifications are delayed by the scan interval
 - **Outbox over direct publish**: atomicity between state change and publish intent, at the cost of a relay loop and added latency
@@ -446,7 +555,7 @@ Current design tradeoffs:
 Possible future improvements:
 - drop `repositories.last_seen_tag` column and remove it from the API response
 - clean up orphaned `scan_cursors` rows on repository deletion
-- physical DB separation per service
+- physical DB separation for Monitoring from Subscription (Auth already has its own instance)
 - contract versioning (`services/contract` → protobuf or versioned Go module)
 - horizontal NATS clustering for HA
 - consumer lag metrics and alerting
