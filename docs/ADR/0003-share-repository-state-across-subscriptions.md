@@ -16,7 +16,9 @@ Store repositories in a separate table and let subscriptions reference them by I
 
 The Subscription service owns the `repositories` table for catalog purposes: find-or-create on subscribe, orphan cleanup on last unsubscribe, uniqueness constraint on `name`. Subscription-level data — email, confirmation state, and tokens — stays on the subscription record.
 
-**Amendment (Phase 2):** Release tracking state (`last_seen_tag`) was moved out of `repositories` and into Monitoring's `scan_cursors` table. Monitoring learns which repos to track via `RepoTracked`/`RepoUntracked` events and maintains its own cursor per repo. The `repositories.last_seen_tag` column remains in the schema as a legacy artifact but is no longer written by any service.
+**Amendment (Phase 2):** Release tracking state (`last_seen_tag`) was moved out of `repositories` and into Monitoring's `scan_cursors` table. Monitoring maintains its own cursor per repo. The `repositories.last_seen_tag` column remains in the schema as a legacy artifact but is no longer written by any service.
+
+**Amendment (Phase 3):** How Monitoring learns which repos to track changed from `RepoTracked`/`RepoUntracked` events to a synchronous gRPC pull against Subscription's catalog service, which also closed the bootstrap gap noted below. See [ADR-0005](0005-pull-tracked-repositories-via-grpc.md).
 
 ## Consequences
 ### Positive
@@ -35,7 +37,7 @@ The Subscription service owns the `repositories` table for catalog purposes: fin
 
 ### Tradeoffs
 - clean bounded-context ownership of tracking state at the cost of a legacy column in the schema
-- `scan_cursors` starts empty; repos subscribed before Monitoring was event-driven must re-subscribe to appear in the scanner (known bootstrap gap)
+- `scan_cursors` starts empty; repos subscribed before Monitoring was event-driven must re-subscribe to appear in the scanner (known bootstrap gap — resolved by the Phase 3 amendment above, see ADR-0005)
 
 ## Alternatives Considered
 ### Store repository data directly on each subscription

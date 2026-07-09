@@ -3,11 +3,11 @@
 This document tracks future scaling and hardening work for the NATS messaging layer. Items marked **✅ Done** were completed during the monolith-to-services migration (Phases 1–3).
 
 Current shape for reference:
-- **Subscription** service: HTTP API + fanout consumer (`notifications.release_found`) + outbox relay → NATS.
-- **Monitoring** service (singleton): GitHub scanner + tracking consumer (`tracking.>`) + outbox relay → NATS.
+- **Subscription** service: HTTP API + fanout consumer (`notifications.release_found`) + outbox relay → NATS + gRPC catalog server (consumed by Monitoring).
+- **Monitoring** service (singleton): GitHub scanner + gRPC catalog client (pulls tracked repos from Subscription) + outbox relay → NATS.
 - **Notification** service (stateless): durable consumer (`notifications.confirmation`, `notifications.release`) → SMTP + DLQ.
-- Two streams: `NOTIFICATIONS` (`notifications.>`, WorkQueue) and `TRACKING` (`tracking.>`, Limits).
-- Shared `services/contract` Go module carries all event types and subjects.
+- One stream: `NOTIFICATIONS` (`notifications.>`, WorkQueue). The `TRACKING` stream (`tracking.>`) was removed — see [ADR-0005](ADR/0005-pull-tracked-repositories-via-grpc.md); tracking coordination is now a synchronous gRPC pull instead of NATS events.
+- Shared `services/contract` Go module carries notification event types and subjects.
 
 ---
 
@@ -35,9 +35,9 @@ Monitoring publishes one `ReleaseFound` event per new release (not one per recip
 
 ---
 
-## D. Split streams by domain — Partial ✅ (Phase 2)
+## D. Split streams by domain — Superseded (Phase 3)
 
-`NOTIFICATIONS` and `TRACKING` are now separate streams with independent subjects and retention policies. What remains: if more domains appear (audit, billing, webhooks), they should get their own streams rather than being added to `NOTIFICATIONS`.
+`NOTIFICATIONS` and `TRACKING` were split into separate streams with independent subjects and retention policies in Phase 2. `TRACKING` was later removed entirely (ADR-0005) once tracking coordination moved to a gRPC pull, leaving `NOTIFICATIONS` as the only stream. The original point still stands: if more domains appear (audit, billing, webhooks), they should get their own streams rather than being added to `NOTIFICATIONS`.
 
 **Trigger.** When a second domain of events appears with different retention or HA requirements.
 
@@ -85,7 +85,7 @@ Both Subscription and Monitoring use the transactional outbox pattern: state cha
 
 ## I. Per-entity ordering when needed
 
-**What.** JetStream guarantees ordering only per subject. If a future consumer needs per-entity ordering (e.g. all events for one repo in sequence), partition by entity in the subject: `tracking.repo.tracked.<repo_id>`, consumed by a single worker per partition.
+**What.** JetStream guarantees ordering only per subject. If a future consumer needs per-entity ordering (e.g. all notification events for one repo in sequence), partition by entity in the subject: `notifications.release.<repo_id>`, consumed by a single worker per partition.
 
 **Why.** With horizontal scaling (F), messages for the same entity can land on different instances out of order.
 
