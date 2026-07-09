@@ -1,0 +1,199 @@
+version: '3'
+
+vars:
+  COMPOSE:         '{{.COMPOSE         | default "docker compose"}}'
+  K6_PROM_URL:     '{{.K6_PROM_URL     | default "http://localhost:9090/api/v1/write"}}'
+  K6_BASE_URL:     '{{.K6_BASE_URL     | default "http://localhost"}}'
+  K6_MAILPIT_URL:  '{{.K6_MAILPIT_URL  | default "http://localhost:8025"}}'
+  K6_TREND_STATS:  '{{.K6_TREND_STATS  | default "p(95),p(99),avg,min,max"}}'
+
+tasks:
+  proto:
+    desc: Generate protobuf and gRPC code
+    cmds:
+      - cd services/subscription/api && buf generate
+      - cd services/auth/api && buf generate
+
+  certs-gen:
+    desc: Generate the private CA, mTLS leaf certs, and JWT signing key
+    status:
+      - test -f certs/ca.crt
+      - test -f certs/subscription.crt
+      - test -f certs/monitoring.crt
+      - test -f certs/auth.crt
+      - test -f certs/jwt-signing.key
+    cmds:
+      - ./build/certs/gen.sh
+
+  build:
+    desc: Build images
+    cmds:
+      - '{{.COMPOSE}} build'
+
+  up-core:
+    desc: Start core services
+    deps: [certs-gen]
+    cmds:
+      - '{{.COMPOSE}} up -d --wait'
+
+  down-core:
+    desc: Stop core services
+    cmds:
+      - '{{.COMPOSE}} down'
+
+  down-all:
+    desc: Stop all profiles (metrics, logging, setup)
+    cmds:
+      - '{{.COMPOSE}} --profile metrics --profile logging --profile setup down'
+
+  up-full:
+    desc: Start core + metrics + logging profiles
+    deps: [certs-gen]
+    cmds:
+      - '{{.COMPOSE}} --profile metrics --profile logging up -d --wait'
+      - task: observability-setup
+
+  observability-setup:
+    desc: Run one-off kibana setup
+    cmds:
+      - '{{.COMPOSE}} --profile logging --profile setup run --rm kibana-setup'
+
+  test-all:
+    desc: Run unit, integration and e2e tests
+    cmds:
+      - task: test-unit
+      - task: test-integration
+      - task: test-e2e
+
+  test-unit:
+    desc: Run unit tests across all service modules
+    cmds:
+      - go test ./services/subscription/internal/...
+      - go test ./services/monitoring/...
+      - go test ./services/notification/...
+      - go test ./services/contract/...
+      - go test ./services/auth/...
+
+  test-integration:
+    desc: Run integration tests
+    cmds:
+      - go test -tags=integration ./services/subscription/test/integration/... -v
+      - go test -tags=integration ./services/notification/internal/consumer/... -v
+      - go test -tags=integration ./services/monitoring/test/integration/... -v
+
+  test-e2e:
+    desc: Spin up stack, run Playwright tests, tear down
+    deps: [certs-gen]
+    cmds:
+      - 'API_KEY=test-api-key {{.COMPOSE}} up -d --wait --build'
+      - cd frontend && API_KEY=test-api-key npx playwright test
+      - '{{.COMPOSE}} down -v'
+
+  lint:
+    desc: Run golangci-lint across all service modules
+    cmds:
+      - golangci-lint run -c .golangci.yaml ./services/subscription/...
+      - golangci-lint run -c .golangci.yaml ./services/monitoring/...
+      - golangci-lint run -c .golangci.yaml ./services/notification/...
+      - golangci-lint run -c .golangci.yaml ./services/auth/...
+
+  lint-fix:
+    desc: Run golangci-lint with auto-fix across all service modules
+    cmds:
+      - golangci-lint run -c .golangci.yaml --fix ./services/subscription/...
+      - golangci-lint run -c .golangci.yaml --fix ./services/monitoring/...
+      - golangci-lint run -c .golangci.yaml --fix ./services/notification/...
+      - golangci-lint run -c .golangci.yaml --fix ./services/auth/...
+
+  format:
+    desc: Format code via golangci-lint fmt
+    cmds:
+      - golangci-lint fmt -c .golangci.yaml ./services/subscription/...
+      - golangci-lint fmt -c .golangci.yaml ./services/monitoring/...
+      - golangci-lint fmt -c .golangci.yaml ./services/notification/...
+      - golangci-lint fmt -c .golangci.yaml ./services/auth/...
+
+  format-check:
+    desc: Check formatting without applying changes
+    cmds:
+      - golangci-lint fmt -c .golangci.yaml --diff ./services/subscription/...
+      - golangci-lint fmt -c .golangci.yaml --diff ./services/monitoring/...
+      - golangci-lint fmt -c .golangci.yaml --diff ./services/notification/...
+      - golangci-lint fmt -c .golangci.yaml --diff ./services/auth/...
+
+# ── k6 ───────────────────────────────────────────────────────────────────────
+
+  _k6:
+    internal: true
+    env:
+      K6_PROMETHEUS_RW_SERVER_URL: "{{.K6_PROM_URL}}"
+      K6_PROMETHEUS_RW_TREND_STATS: "{{.K6_TREND_STATS}}"
+    cmds:
+      - k6 run -o experimental-prometheus-rw --tag testid={{.TESTID}}
+          -e BASE_URL={{.K6_BASE_URL}} -e MAILPIT_URL={{.K6_MAILPIT_URL}} {{.SCRIPT}}
+
+  k6-smoke:
+    desc: Smoke test (with Prometheus remote write)
+    cmds:
+      - task: _k6
+        vars: { TESTID: smoke, SCRIPT: k6/smoke.js }
+
+  k6-smoke-ci:
+    desc: Smoke test (CI mode, no Prometheus)
+    cmds:
+      - k6 run -e BASE_URL={{.K6_BASE_URL}} -e MAILPIT_URL={{.K6_MAILPIT_URL}} k6/smoke.js
+
+  k6-load:
+    desc: Read load test
+    cmds:
+      - task: _k6
+        vars: { TESTID: read-load, SCRIPT: k6/read-load.js }
+
+  k6-stress:
+    desc: Read stress test
+    cmds:
+      - task: _k6
+        vars: { TESTID: read-stress, SCRIPT: k6/read-stress.js }
+
+  k6-spike:
+    desc: Spike test
+    cmds:
+      - task: _k6
+        vars: { TESTID: read-spike, SCRIPT: k6/read-spike.js }
+
+  k6-soak:
+    desc: Soak test
+    cmds:
+      - task: _k6
+        vars: { TESTID: read-soak, SCRIPT: k6/read-soak.js }
+
+  k6-breakpoint:
+    desc: Breakpoint test
+    cmds:
+      - task: _k6
+        vars: { TESTID: breakpoint, SCRIPT: k6/breakpoint.js }
+
+  k6-write:
+    desc: Write load test
+    cmds:
+      - task: _k6
+        vars: { TESTID: write-load, SCRIPT: k6/write-load.js }
+
+  k6-journey:
+    desc: Full user journey test (requires Mailpit)
+    cmds:
+      - task: _k6
+        vars: { TESTID: journey, SCRIPT: k6/journey.js }
+
+  k6-suite:
+    desc: Run smoke → load → stress → spike sequentially
+    cmds:
+      - task: k6-smoke
+      - task: k6-load
+      - task: k6-stress
+      - task: k6-spike
+
+  k6-clean:
+    desc: Delete load-test subscriptions from the database
+    cmds:
+      - '{{.COMPOSE}} exec -T postgres_db psql -U postgres -d github_release_notifications -c "DELETE FROM subscriptions WHERE email LIKE ''%@loadtest.local'';"'

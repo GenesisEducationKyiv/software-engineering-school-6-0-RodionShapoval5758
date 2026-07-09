@@ -1,0 +1,20 @@
+syntax = "proto3";
+
+package catalog.v1;
+
+option go_package = "GithubReleaseNotificationAPI/services/subscription/api/gen/catalogv1/catalog/v1";
+
+service CatalogService {
+  rpc ListTrackedRepos(ListTrackedReposRequest) returns (ListTrackedReposResponse);
+}
+
+message ListTrackedReposRequest {}
+
+message ListTrackedReposResponse {
+  repeated TrackedRepo repos = 1;
+}
+
+message TrackedRepo {
+  int64  repo_id   = 1;
+  string full_name = 2;
+}

@@ -1,0 +1,344 @@
+swagger: "2.0"
+info:
+  description: "GitHub Release Notification API that allows users to register, log in, subscribe to email notifications about new releases of a chosen GitHub repository, and manage those subscriptions."
+  version: "1.0.0"
+  title: "GitHub Release Notification API"
+host: "releases-api.app"
+tags:
+  - name: "auth"
+    description: "Account registration, email verification, and JWT session management"
+  - name: "subscription"
+    description: "Subscription management operations"
+schemes:
+  - "http"
+  - "https"
+securityDefinitions:
+  BearerAuth:
+    type: "apiKey"
+    in: "header"
+    name: "Authorization"
+    description: "JWT access token issued by POST /auth/login (or /auth/refresh). Example: 'Bearer <jwt>'. The token's email claim identifies the subscriber."
+paths:
+  /auth/register:
+    post:
+      tags:
+        - "auth"
+      summary: "Register a new account"
+      description: "Creates an unverified account and emails a verification link. Login is blocked until the email is verified."
+      operationId: "register"
+      consumes:
+        - "application/json"
+      produces:
+        - "application/json"
+      parameters:
+        - in: "body"
+          name: "body"
+          required: true
+          schema:
+            $ref: "#/definitions/RegisterRequest"
+      responses:
+        "201":
+          description: "Registered. Verification email sent."
+          schema:
+            $ref: "#/definitions/MessageResponse"
+        "400":
+          description: "Invalid email format or password shorter than 8 characters"
+          schema:
+            $ref: "#/definitions/ErrorResponse"
+        "409":
+          description: "Email is already registered"
+          schema:
+            $ref: "#/definitions/ErrorResponse"
+  /auth/verify-email/{token}:
+    get:
+      tags:
+        - "auth"
+      summary: "Verify an email address"
+      description: "Confirms the account using the token sent in the verification email. Required before login is allowed."
+      operationId: "verifyEmail"
+      parameters:
+        - name: "token"
+          in: "path"
+          description: "Verification token"
+          required: true
+          type: "string"
+      produces:
+        - "application/json"
+      responses:
+        "200":
+          description: "Email verified. Login is now allowed."
+          schema:
+            $ref: "#/definitions/MessageResponse"
+        "400":
+          description: "Invalid token"
+          schema:
+            $ref: "#/definitions/ErrorResponse"
+        "404":
+          description: "Token not found"
+          schema:
+            $ref: "#/definitions/ErrorResponse"
+        "410":
+          description: "Token expired or already used"
+          schema:
+            $ref: "#/definitions/ErrorResponse"
+  /auth/login:
+    post:
+      tags:
+        - "auth"
+      summary: "Log in"
+      description: "Exchanges verified credentials for a JWT access token and an opaque refresh token."
+      operationId: "login"
+      consumes:
+        - "application/json"
+      produces:
+        - "application/json"
+      parameters:
+        - in: "body"
+          name: "body"
+          required: true
+          schema:
+            $ref: "#/definitions/LoginRequest"
+      responses:
+        "200":
+          description: "Login successful"
+          schema:
+            $ref: "#/definitions/TokenPair"
+        "400":
+          description: "Invalid request body"
+          schema:
+            $ref: "#/definitions/ErrorResponse"
+        "401":
+          description: "Invalid email or password, or the email is not verified yet"
+          schema:
+            $ref: "#/definitions/ErrorResponse"
+  /auth/refresh:
+    post:
+      tags:
+        - "auth"
+      summary: "Refresh a session"
+      description: "Rotates a refresh token for a new access/refresh pair. The old refresh token is revoked on use."
+      operationId: "refresh"
+      consumes:
+        - "application/json"
+      produces:
+        - "application/json"
+      parameters:
+        - in: "body"
+          name: "body"
+          required: true
+          schema:
+            $ref: "#/definitions/RefreshRequest"
+      responses:
+        "200":
+          description: "Refresh successful"
+          schema:
+            $ref: "#/definitions/TokenPair"
+        "400":
+          description: "Missing or invalid request body"
+          schema:
+            $ref: "#/definitions/ErrorResponse"
+        "401":
+          description: "Invalid, expired, or already-rotated refresh token"
+          schema:
+            $ref: "#/definitions/ErrorResponse"
+  /auth/logout:
+    post:
+      tags:
+        - "auth"
+      summary: "Log out"
+      description: "Revokes the given refresh token."
+      operationId: "logout"
+      consumes:
+        - "application/json"
+      parameters:
+        - in: "body"
+          name: "body"
+          required: true
+          schema:
+            $ref: "#/definitions/RefreshRequest"
+      responses:
+        "204":
+          description: "Logged out"
+        "400":
+          description: "Missing or invalid request body"
+          schema:
+            $ref: "#/definitions/ErrorResponse"
+  /api/subscribe:
+    post:
+      tags:
+        - "subscription"
+      summary: "Subscribe to release notifications"
+      description: "Subscribe the authenticated user's email to receive notifications about new releases of a GitHub repository. The email is taken from the JWT, not the request body. The repository is validated via GitHub API. Also accepts application/x-www-form-urlencoded with the same field."
+      operationId: "subscribe"
+      security:
+        - BearerAuth: []
+      consumes:
+        - "application/json"
+      produces:
+        - "application/json"
+      parameters:
+        - in: "body"
+          name: "body"
+          required: true
+          schema:
+            $ref: "#/definitions/SubscribeRequest"
+      responses:
+        "200":
+          description: "Subscription successful. Confirmation email sent."
+        "400":
+          description: "Invalid input (e.g., invalid repo format)"
+        "401":
+          description: "Missing or invalid JWT"
+        "404":
+          description: "Repository not found on GitHub"
+        "409":
+          description: "Email already subscribed to this repository"
+        "429":
+          description: "GitHub API rate limit reached"
+        "502":
+          description: "GitHub API token is invalid or expired"
+  /api/confirm/{token}:
+    get:
+      tags:
+        - "subscription"
+      summary: "Confirm email subscription"
+      description: "Confirms a subscription using the token sent in the confirmation email."
+      operationId: "confirmSubscription"
+      parameters:
+        - name: "token"
+          in: "path"
+          description: "Confirmation token"
+          required: true
+          type: "string"
+      produces:
+        - "application/json"
+      responses:
+        "200":
+          description: "Subscription confirmed successfully"
+        "400":
+          description: "Invalid token"
+        "404":
+          description: "Token not found"
+  /api/unsubscribe/{token}:
+    get:
+      tags:
+        - "subscription"
+      summary: "Unsubscribe from release notifications"
+      description: "Unsubscribes an email from release notifications using the token sent in emails."
+      operationId: "unsubscribe"
+      parameters:
+        - name: "token"
+          in: "path"
+          description: "Unsubscribe token"
+          required: true
+          type: "string"
+      produces:
+        - "application/json"
+      responses:
+        "200":
+          description: "Unsubscribed successfully"
+        "400":
+          description: "Invalid token"
+        "404":
+          description: "Token not found"
+  /api/subscriptions:
+    get:
+      tags:
+        - "subscription"
+      summary: "Get subscriptions for the authenticated user"
+      description: "Returns all active subscriptions for the email in the JWT."
+      operationId: "getSubscriptions"
+      security:
+        - BearerAuth: []
+      produces:
+        - "application/json"
+      responses:
+        "200":
+          description: "Successful operation - list of subscriptions returned"
+          schema:
+            type: "array"
+            items:
+              $ref: "#/definitions/Subscription"
+        "401":
+          description: "Missing or invalid JWT"
+definitions:
+  RegisterRequest:
+    type: "object"
+    required:
+      - "email"
+      - "password"
+    properties:
+      email:
+        type: "string"
+        example: "you@example.com"
+      password:
+        type: "string"
+        format: "password"
+        description: "Minimum 8 characters"
+        example: "correct-horse-battery-staple"
+  LoginRequest:
+    type: "object"
+    required:
+      - "email"
+      - "password"
+    properties:
+      email:
+        type: "string"
+        example: "you@example.com"
+      password:
+        type: "string"
+        format: "password"
+  RefreshRequest:
+    type: "object"
+    required:
+      - "refresh_token"
+    properties:
+      refresh_token:
+        type: "string"
+        description: "Opaque refresh token returned by /auth/login or a prior /auth/refresh"
+  TokenPair:
+    type: "object"
+    properties:
+      access_token:
+        type: "string"
+        description: "ES256 JWT, 15-minute default TTL. Carries the user's email in the 'email' claim."
+      refresh_token:
+        type: "string"
+        description: "Opaque token, 30-day default TTL. Single-use — rotated on every /auth/refresh call."
+  MessageResponse:
+    type: "object"
+    properties:
+      message:
+        type: "string"
+  ErrorResponse:
+    type: "object"
+    properties:
+      error:
+        type: "string"
+  SubscribeRequest:
+    type: "object"
+    required:
+      - "repo"
+    properties:
+      repo:
+        type: "string"
+        description: "GitHub repository in owner/repo format"
+        example: "golang/go"
+  Subscription:
+    type: "object"
+    required:
+      - "email"
+      - "repo"
+    properties:
+      email:
+        type: "string"
+        description: "Email address"
+      repo:
+        type: "string"
+        description: "GitHub repository in owner/repo format"
+      confirmed:
+        type: "boolean"
+        description: "Whether the subscription is confirmed"
+      last_seen_tag:
+        type: "string"
+        description: "Last seen release tag for this repository"
