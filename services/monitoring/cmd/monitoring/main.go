@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"log/slog"
+	"net"
 	"net/http"
 	"os"
 	"os/signal"
@@ -12,16 +13,20 @@ import (
 	"time"
 
 	"GithubReleaseNotificationAPI/contract"
+	"GithubReleaseNotificationAPI/services/monitoring/internal/catalogclient"
 	monconfig "GithubReleaseNotificationAPI/services/monitoring/internal/config"
-	monconsumer "GithubReleaseNotificationAPI/services/monitoring/internal/consumer"
 	"GithubReleaseNotificationAPI/services/monitoring/internal/db"
 	"GithubReleaseNotificationAPI/services/monitoring/internal/github"
 	"GithubReleaseNotificationAPI/services/monitoring/internal/monitoring"
 	monrelay "GithubReleaseNotificationAPI/services/monitoring/internal/relay"
 	"GithubReleaseNotificationAPI/services/monitoring/internal/store"
+	catalogv1 "GithubReleaseNotificationAPI/services/subscription/api/gen/catalogv1/catalog/v1"
 
 	natsgo "github.com/nats-io/nats.go"
 	"github.com/nats-io/nats.go/jetstream"
+	"google.golang.org/grpc"
+	"google.golang.org/grpc/credentials"
+	"google.golang.org/grpc/keepalive"
 )
 
 func main() {
@@ -39,6 +44,11 @@ func run() error {
 	cfg, err := monconfig.Load()
 	if err != nil {
 		return err
+	}
+
+	grpcTLSConfig, err := newGRPCClientTLSConfig(cfg)
+	if err != nil {
+		return fmt.Errorf("grpc tls config: %w", err)
 	}
 
 	initCtx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
@@ -66,13 +76,52 @@ func run() error {
 	cursorStore := store.NewCursorStore(pool)
 	outboxStore := store.NewOutboxStore()
 
-	githubClient := github.NewGithubClient(&http.Client{Timeout: 15 * time.Second}, &cfg.GithubToken)
+	conn, err := grpc.NewClient(
+		cfg.SubscriptionGRPCAddr,
+		grpc.WithTransportCredentials(credentials.NewTLS(grpcTLSConfig)),
+		grpc.WithKeepaliveParams(keepalive.ClientParameters{
+			Time:                10 * time.Second,
+			Timeout:             5 * time.Second,
+			PermitWithoutStream: true,
+		}),
+		grpc.WithDefaultServiceConfig(`{
+			"methodConfig": [{
+				"name": [{"service": "catalog.v1.CatalogService"}],
+				"retryPolicy": {
+					"maxAttempts": 3,
+					"initialBackoff": "0.5s",
+					"maxBackoff": "5s",
+					"backoffMultiplier": 2.0,
+					"retryableStatusCodes": ["UNAVAILABLE"]
+				}
+			}]
+		}`),
+	)
+	if err != nil {
+		return fmt.Errorf("connect to subscription grpc: %w", err)
+	}
+	defer func() { _ = conn.Close() }()
 
-	catalogAdapter := &cursorCatalogAdapter{cursors: cursorStore}
+	grpcClient := catalogv1.NewCatalogServiceClient(conn)
+
+	githubClient := github.NewGithubClient(&http.Client{
+		Timeout: 15 * time.Second,
+		Transport: &http.Transport{
+			DialContext: (&net.Dialer{
+				Timeout:   5 * time.Second,
+				KeepAlive: 30 * time.Second,
+			}).DialContext,
+			TLSHandshakeTimeout:   5 * time.Second,
+			ResponseHeaderTimeout: 10 * time.Second,
+			MaxIdleConnsPerHost:   10,
+			IdleConnTimeout:       90 * time.Second,
+		},
+	}, &cfg.GithubToken)
+
+	catalogAdapter := catalogclient.New(cursorStore, grpcClient)
 	enqueuer := &releaseFoundEnqueuer{outbox: outboxStore}
 	worker := monitoring.NewWorker(githubClient, catalogAdapter, enqueuer, nil)
 
-	trackingConsumer := monconsumer.New(js, cursorStore, pool)
 	relay := monrelay.New(pool, js, outboxStore)
 
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
@@ -81,11 +130,6 @@ func run() error {
 	slog.Info("monitoring service started", "scan_interval", cfg.ScanInterval)
 
 	go relay.Run(ctx)
-	go func() {
-		if err := trackingConsumer.Start(ctx); err != nil && ctx.Err() == nil {
-			slog.Error("tracking consumer error", "error", err)
-		}
-	}()
 
 	if err := worker.Start(ctx, cfg.ScanInterval); err != nil {
 		return err
@@ -96,18 +140,6 @@ func run() error {
 	}
 
 	return nil
-}
-
-type cursorCatalogAdapter struct {
-	cursors *store.CursorStore
-}
-
-func (a *cursorCatalogAdapter) ListTracked(ctx context.Context) ([]monitoring.TrackedRepo, error) {
-	return a.cursors.ListTracked(ctx)
-}
-
-func (a *cursorCatalogAdapter) UpdateLastSeenTagAtomic(ctx context.Context, repoID int64, tag string, onTx func(context.Context, db.DBTX) error) error {
-	return a.cursors.UpdateLastSeenTagAtomic(ctx, repoID, tag, onTx)
 }
 
 type releaseFoundEnqueuer struct {

@@ -4,11 +4,12 @@ package integration_test
 
 import (
 	"context"
+	"net"
 	"net/http"
 	"testing"
-
 	"time"
 
+	catalogv1 "GithubReleaseNotificationAPI/services/subscription/api/gen/catalogv1/catalog/v1"
 	"GithubReleaseNotificationAPI/services/subscription/internal/catalog"
 	"GithubReleaseNotificationAPI/services/subscription/internal/db"
 	"GithubReleaseNotificationAPI/services/subscription/internal/metrics"
@@ -16,12 +17,15 @@ import (
 	"GithubReleaseNotificationAPI/services/subscription/internal/saga"
 	"GithubReleaseNotificationAPI/services/subscription/internal/subscription"
 	"GithubReleaseNotificationAPI/services/subscription/internal/subscription/usecase"
+	grpchandler "GithubReleaseNotificationAPI/services/subscription/internal/transport/grpc/handler"
 	"GithubReleaseNotificationAPI/services/subscription/internal/transport/http/handler"
 	httpRouter "GithubReleaseNotificationAPI/services/subscription/internal/transport/http/router"
 
 	"github.com/prometheus/client_golang/prometheus"
-
 	"github.com/stretchr/testify/suite"
+	"google.golang.org/grpc"
+	"google.golang.org/grpc/credentials/insecure"
+	"google.golang.org/grpc/test/bufconn"
 )
 
 type noopPinger struct{}
@@ -34,13 +38,16 @@ type IntegrationSuite struct {
 	suite.Suite
 	router     http.Handler
 	githubFake *fakeGithubClient
+	grpcConn   *grpc.ClientConn
+	grpcSrv    *grpc.Server
+	bufLis     *bufconn.Listener
 }
 
 func (s *IntegrationSuite) SetupSuite() {
 	subRepo := subscription.NewRepository(testPool)
 	outboxStore := outbox.NewStore()
 	ensureCat := catalog.NewEnsure(testPool)
-	deleteCat := catalog.NewDeleteIfOrphaned(testPool, outboxStore)
+	deleteCat := catalog.NewDeleteIfOrphaned(testPool)
 	s.githubFake = &fakeGithubClient{}
 
 	sagaStore := saga.NewStore()
@@ -54,6 +61,33 @@ func (s *IntegrationSuite) SetupSuite() {
 	h := handler.New(sub, conf, unsub, list)
 	m := metrics.New(prometheus.NewRegistry())
 	s.router = httpRouter.New(h, testAPIKey, m, noopPinger{}, noopPinger{})
+
+	const bufSize = 1024 * 1024
+	s.bufLis = bufconn.Listen(bufSize)
+
+	s.grpcSrv = grpc.NewServer()
+	listTrackedUC := catalog.NewListTracked(testPool)
+	catalogv1.RegisterCatalogServiceServer(s.grpcSrv, grpchandler.NewCatalog(listTrackedUC))
+
+	go func() { _ = s.grpcSrv.Serve(s.bufLis) }()
+
+	conn, err := grpc.NewClient("passthrough://bufnet",
+		grpc.WithContextDialer(func(ctx context.Context, _ string) (net.Conn, error) {
+			return s.bufLis.DialContext(ctx)
+		}),
+		grpc.WithTransportCredentials(insecure.NewCredentials()),
+	)
+	s.Require().NoError(err)
+	s.grpcConn = conn
+}
+
+func (s *IntegrationSuite) TearDownSuite() {
+	if s.grpcSrv != nil {
+		s.grpcSrv.GracefulStop()
+	}
+	if s.grpcConn != nil {
+		_ = s.grpcConn.Close()
+	}
 }
 
 func (s *IntegrationSuite) SetupTest() {

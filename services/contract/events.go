@@ -15,11 +15,6 @@ const (
 	StreamDLQ   = "NOTIFICATIONS_DLQ"
 	SubjectDead = "dlq.notifications"
 
-	StreamTracking       = "TRACKING"
-	SubjectRepoTracked   = "tracking.repo.tracked"
-	SubjectRepoUntracked = "tracking.repo.untracked"
-	SubjectTrackingAll   = "tracking.>"
-
 	StreamSaga         = "SAGA"
 	SubjectEmailSent   = "saga.email.sent"
 	SubjectEmailFailed = "saga.email.failed"
@@ -48,15 +43,6 @@ type ReleaseDetected struct {
 	ReleaseTag       string `json:"release_tag"`
 	ReleaseName      string `json:"release_name"`
 	ReleaseURL       string `json:"release_url"`
-}
-
-type RepoTracked struct {
-	RepoID   int64  `json:"repo_id"`
-	FullName string `json:"full_name"`
-}
-
-type RepoUntracked struct {
-	RepoID int64 `json:"repo_id"`
 }
 
 type ReleaseFound struct {

@@ -5,10 +5,12 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"net"
 	"net/http"
 	"time"
 
 	"GithubReleaseNotificationAPI/contract"
+	catalogv1 "GithubReleaseNotificationAPI/services/subscription/api/gen/catalogv1/catalog/v1"
 	"GithubReleaseNotificationAPI/services/subscription/internal/catalog"
 	"GithubReleaseNotificationAPI/services/subscription/internal/config"
 	"GithubReleaseNotificationAPI/services/subscription/internal/db"
@@ -19,17 +21,21 @@ import (
 	"GithubReleaseNotificationAPI/services/subscription/internal/saga"
 	"GithubReleaseNotificationAPI/services/subscription/internal/subscription"
 	"GithubReleaseNotificationAPI/services/subscription/internal/subscription/usecase"
-	"GithubReleaseNotificationAPI/services/subscription/internal/transport/http/handler"
+	"GithubReleaseNotificationAPI/services/subscription/internal/transport/grpc/handler"
+	httphandler "GithubReleaseNotificationAPI/services/subscription/internal/transport/http/handler"
 	httpRouter "GithubReleaseNotificationAPI/services/subscription/internal/transport/http/router"
 
 	"github.com/jackc/pgx/v5/pgxpool"
 	natsgo "github.com/nats-io/nats.go"
 	"github.com/nats-io/nats.go/jetstream"
 	"github.com/prometheus/client_golang/prometheus"
+	"google.golang.org/grpc"
+	"google.golang.org/grpc/credentials"
 )
 
 type App struct {
-	server     *http.Server
+	httpServer *http.Server
+	grpcServer *grpc.Server
 	relay      *outbox.Relay
 	fanout     *fanout.Worker
 	sagaCons   *saga.Consumer
@@ -42,6 +48,11 @@ type App struct {
 func Build(cfg *config.Config) (*App, error) {
 	initCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
+
+	grpcTLSConfig, err := newGRPCServerTLSConfig(cfg)
+	if err != nil {
+		return nil, fmt.Errorf("grpc tls config: %w", err)
+	}
 
 	if err := db.RunMigrations(cfg.DatabaseURL); err != nil {
 		return nil, err
@@ -80,18 +91,6 @@ func Build(cfg *config.Config) (*App, error) {
 	}
 
 	if _, err := js.CreateOrUpdateStream(initCtx, jetstream.StreamConfig{
-		Name:       contract.StreamTracking,
-		Subjects:   []string{contract.SubjectTrackingAll},
-		Storage:    jetstream.FileStorage,
-		Duplicates: 2 * time.Minute,
-		MaxAge:     24 * time.Hour,
-	}); err != nil {
-		_ = nc.Drain()
-		dbPool.Close()
-		return nil, fmt.Errorf("ensure tracking stream: %w", err)
-	}
-
-	if _, err := js.CreateOrUpdateStream(initCtx, jetstream.StreamConfig{
 		Name:       contract.StreamSaga,
 		Subjects:   []string{contract.SubjectSagaAll},
 		Storage:    jetstream.FileStorage,
@@ -107,10 +106,22 @@ func Build(cfg *config.Config) (*App, error) {
 	outboxRelay := outbox.NewRelay(dbPool, js, outboxStore)
 
 	subRepo := subscription.NewRepository(dbPool)
-	githubClient := github.NewGithubClient(&http.Client{Timeout: 15 * time.Second}, &cfg.GithubToken)
+	githubClient := github.NewGithubClient(&http.Client{
+		Timeout: 15 * time.Second,
+		Transport: &http.Transport{
+			DialContext: (&net.Dialer{
+				Timeout:   5 * time.Second,
+				KeepAlive: 30 * time.Second,
+			}).DialContext,
+			TLSHandshakeTimeout:   5 * time.Second,
+			ResponseHeaderTimeout: 10 * time.Second,
+			MaxIdleConnsPerHost:   10,
+			IdleConnTimeout:       90 * time.Second,
+		},
+	}, &cfg.GithubToken)
 
 	ensureUC := catalog.NewEnsure(dbPool)
-	deleteIfOrphanedUC := catalog.NewDeleteIfOrphaned(dbPool, outboxStore)
+	deleteIfOrphanedUC := catalog.NewDeleteIfOrphaned(dbPool)
 
 	sagaStore := saga.NewStore()
 	sagaOrchestrator := saga.NewOrchestrator(sagaStore, db.WrapPool(dbPool), deleteIfOrphanedUC, subRepo)
@@ -123,15 +134,20 @@ func Build(cfg *config.Config) (*App, error) {
 	reg := prometheus.NewRegistry()
 	appMetrics := metrics.New(reg)
 
-	subHandler := handler.New(subscribeUC, confirmUC, unsubscribeUC, listUC)
-	router := httpRouter.New(subHandler, cfg.ApiKey, appMetrics, &dbPinger{dbPool}, &natsPinger{nc})
+	httpHandler := httphandler.New(subscribeUC, confirmUC, unsubscribeUC, listUC)
+	chiRouter := httpRouter.New(httpHandler, cfg.ApiKey, appMetrics, &dbPinger{dbPool}, &natsPinger{nc})
 
-	fanoutWorker := fanout.NewWorker(js, dbPool, &recipientListerAdapter{lister: listUC}, outboxStore)
+	listTrackedUC := catalog.NewListTracked(dbPool)
+	grpcServer := grpc.NewServer(grpc.Creds(credentials.NewTLS(grpcTLSConfig)))
+	catalogv1.RegisterCatalogServiceServer(grpcServer, handler.NewCatalog(listTrackedUC))
+
+	fanoutWorker := fanout.NewWorker(js, dbPool, &recipientListerAdapter{lister: listUC}, outboxStore, fanout.NewRepoStore())
 	sagaConsumer := saga.NewConsumer(js, sagaOrchestrator)
 	sagaReaper := saga.NewReaper(dbPool, sagaStore, sagaOrchestrator)
 
 	return &App{
-		server:     &http.Server{Addr: ":" + cfg.Port, Handler: router},
+		httpServer: &http.Server{Addr: ":" + cfg.Port, Handler: chiRouter},
+		grpcServer: grpcServer,
 		relay:      outboxRelay,
 		fanout:     fanoutWorker,
 		sagaCons:   sagaConsumer,
@@ -142,15 +158,28 @@ func Build(cfg *config.Config) (*App, error) {
 	}, nil
 }
 
-func (a *App) Serve(ctx context.Context) error {
+func (a *App) Serve(ctx context.Context, grpcPort string) error {
 	defer a.dbPool.Close()
 	defer func() { _ = a.nc.Drain() }()
 
-	slog.Info("starting HTTP server", "port", a.server.Addr)
+	grpcLis, err := net.Listen("tcp", ":"+grpcPort)
+	if err != nil {
+		return fmt.Errorf("grpc listen: %w", err)
+	}
 
-	serverErr := make(chan error, 1)
+	slog.Info("starting HTTP server", "port", a.httpServer.Addr)
+	slog.Info("starting gRPC server", "port", grpcPort)
+
+	serverErr := make(chan error, 2)
+
 	go func() {
-		if err := a.server.ListenAndServe(); err != nil && !errors.Is(err, http.ErrServerClosed) {
+		if err := a.httpServer.ListenAndServe(); err != nil && !errors.Is(err, http.ErrServerClosed) {
+			serverErr <- err
+		}
+	}()
+
+	go func() {
+		if err := a.grpcServer.Serve(grpcLis); err != nil {
 			serverErr <- err
 		}
 	}()
@@ -173,17 +202,19 @@ func (a *App) Serve(ctx context.Context) error {
 	case <-ctx.Done():
 		slog.Info("shutdown signal received")
 	case err := <-serverErr:
-		return fmt.Errorf("http server: %w", err)
+		return fmt.Errorf("server error: %w", err)
 	}
+
+	a.grpcServer.GracefulStop()
 
 	shutdownCtx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
 
-	if err := a.server.Shutdown(shutdownCtx); err != nil {
+	if err := a.httpServer.Shutdown(shutdownCtx); err != nil {
 		return err
 	}
 
-	slog.Info("http server stopped")
+	slog.Info("servers stopped")
 
 	return nil
 }

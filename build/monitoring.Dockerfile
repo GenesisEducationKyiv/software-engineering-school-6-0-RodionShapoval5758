@@ -4,10 +4,14 @@ WORKDIR /app
 COPY services/contract/go.mod services/contract/go.sum ./services/contract/
 RUN cd services/contract && GOWORK=off go mod download
 
+COPY services/subscription/go.mod services/subscription/go.sum ./services/subscription/
+RUN cd services/subscription && GOWORK=off go mod download
+
 COPY services/monitoring/go.mod services/monitoring/go.sum ./services/monitoring/
 RUN cd services/monitoring && GOWORK=off go mod download
 
 COPY services/contract/ ./services/contract/
+COPY services/subscription/ ./services/subscription/
 COPY services/monitoring/ ./services/monitoring/
 RUN GOWORK=off CGO_ENABLED=0 GOOS=linux go build -C ./services/monitoring -o /app/monitoring ./cmd/monitoring
 

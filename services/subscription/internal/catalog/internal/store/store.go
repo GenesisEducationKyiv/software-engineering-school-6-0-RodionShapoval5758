@@ -63,19 +63,6 @@ func (r *PostgresRepoRepository) FindByFullName(ctx context.Context, fullName st
 	return &repo, nil
 }
 
-func (r *PostgresRepoRepository) UpdateLastSeenTag(ctx context.Context, repositoryID int64, lastTag string) error {
-	tag, err := r.db.Exec(ctx, updateLastSeenTagByIDQuery, repositoryID, lastTag)
-	if err != nil {
-		return fmt.Errorf("update last_seen_tag %s in repo with id %d: %w", lastTag, repositoryID, err)
-	}
-
-	if tag.RowsAffected() == 0 {
-		return db.ErrNotFound
-	}
-
-	return nil
-}
-
 func (r *PostgresRepoRepository) DeleteByID(ctx context.Context, repositoryID int64) error {
 	tag, err := r.db.Exec(ctx, deleteByIDQuery, repositoryID)
 	if err != nil {

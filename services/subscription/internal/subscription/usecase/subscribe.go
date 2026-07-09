@@ -121,14 +121,6 @@ func (uc *Subscribe) verifyRepo(ctx context.Context, repo string) error {
 }
 
 func (uc *Subscribe) createPending(ctx context.Context, email, repoName string, repositoryID int64) error {
-	repoTrackedPayload, err := json.Marshal(contract.RepoTracked{
-		RepoID:   repositoryID,
-		FullName: repoName,
-	})
-	if err != nil {
-		return fmt.Errorf("marshal RepoTracked event: %w", err)
-	}
-
 	sagaID := idgen.New()
 
 	for range maxTokenAttempts {
@@ -147,7 +139,7 @@ func (uc *Subscribe) createPending(ctx context.Context, email, repoName string, 
 			return fmt.Errorf("marshal confirmation event: %w", err)
 		}
 
-		err = uc.createAndEnqueue(ctx, sagaID, *sub, confirmPayload, repoTrackedPayload)
+		err = uc.createAndEnqueue(ctx, sagaID, *sub, confirmPayload)
 		if errors.Is(err, db.ErrTokenConflict) {
 			continue
 		}
@@ -166,7 +158,7 @@ func (uc *Subscribe) createPending(ctx context.Context, email, repoName string, 
 	return fmt.Errorf("create subscription tokens conflict after retries: %w", db.ErrTokenConflict)
 }
 
-func (uc *Subscribe) createAndEnqueue(ctx context.Context, sagaID string, sub domain.Subscription, confirmPayload, repoTrackedPayload []byte) error {
+func (uc *Subscribe) createAndEnqueue(ctx context.Context, sagaID string, sub domain.Subscription, confirmPayload []byte) error {
 	tx, err := uc.pool.BeginTx(ctx, pgx.TxOptions{})
 	if err != nil {
 		return fmt.Errorf("begin tx: %w", err)
@@ -193,10 +185,6 @@ func (uc *Subscribe) createAndEnqueue(ctx context.Context, sagaID string, sub do
 
 	if err := uc.outbox.Insert(ctx, tx, contract.SubjectConfirmation, confirmPayload); err != nil {
 		return fmt.Errorf("enqueue confirmation event: %w", err)
-	}
-
-	if err := uc.outbox.Insert(ctx, tx, contract.SubjectRepoTracked, repoTrackedPayload); err != nil {
-		return fmt.Errorf("enqueue RepoTracked event: %w", err)
 	}
 
 	return tx.Commit(ctx)

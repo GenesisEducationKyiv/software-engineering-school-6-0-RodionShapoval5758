@@ -36,3 +36,10 @@ profile.cov
 
 # OS files
 .DS_Store
+
+# Certs
+/certs/
+*.key
+*.crt
+*.csr
+*.srl

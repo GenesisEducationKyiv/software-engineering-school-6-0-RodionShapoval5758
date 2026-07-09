@@ -18,7 +18,7 @@ db/
 *.md
 swagger.yaml
 Taskfile.yaml
-docker-compose.yaml
+compose.yaml
 
 
 frontend/node_modules/

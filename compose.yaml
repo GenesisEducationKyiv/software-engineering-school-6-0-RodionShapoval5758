@@ -6,7 +6,7 @@ x-logging: &default-logging
 
 services:
   nats:
-    image: nats:2-alpine
+    image: nats:2.11-alpine
     container_name: github-release-notification-nats
     restart: unless-stopped
     logging: *default-logging
@@ -52,12 +52,20 @@ services:
         condition: service_healthy
     labels:
       filebeat_collect: "true"
+    volumes:
+      - ./certs/ca.crt:/certs/ca.crt:ro
+      - ./certs/subscription.crt:/certs/subscription.crt:ro
+      - ./certs/subscription.key:/certs/subscription.key:ro
     environment:
       PORT: "8080"
+      GRPC_PORT: "50051"
       DATABASE_URL: postgres://postgres:password@postgres_db:5432/github_release_notifications?sslmode=disable
       GITHUB_TOKEN: ${GITHUB_TOKEN}
       API_KEY: ${API_KEY}
       NATS_URL: nats://nats:4222
+      GRPC_TLS_CA_CERT: /certs/ca.crt
+      GRPC_TLS_CERT: /certs/subscription.crt
+      GRPC_TLS_KEY: /certs/subscription.key
     healthcheck:
       test: ["CMD", "/app/healthcheck"]
       interval: 10s
@@ -77,11 +85,19 @@ services:
         condition: service_healthy
       nats:
         condition: service_healthy
+    volumes:
+      - ./certs/ca.crt:/certs/ca.crt:ro
+      - ./certs/monitoring.crt:/certs/monitoring.crt:ro
+      - ./certs/monitoring.key:/certs/monitoring.key:ro
     environment:
       DATABASE_URL: postgres://postgres:password@postgres_db:5432/github_release_notifications?sslmode=disable
       GITHUB_TOKEN: ${GITHUB_TOKEN}
       NATS_URL: nats://nats:4222
       SCAN_INTERVAL: "25s"
+      SUBSCRIPTION_GRPC_ADDR: subscription:50051
+      GRPC_TLS_CA_CERT: /certs/ca.crt
+      GRPC_TLS_CERT: /certs/monitoring.crt
+      GRPC_TLS_KEY: /certs/monitoring.key
 
   notification:
     build:

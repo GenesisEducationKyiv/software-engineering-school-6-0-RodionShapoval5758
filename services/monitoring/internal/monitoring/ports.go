@@ -9,7 +9,7 @@ import (
 
 type catalogClient interface {
 	ListTracked(ctx context.Context) ([]TrackedRepo, error)
-	UpdateLastSeenTagAtomic(ctx context.Context, repoID int64, tag string, onTx func(context.Context, db.DBTX) error) error
+	UpdateLastSeenTagAtomic(ctx context.Context, repoID int64, fullName, tag string, onTx func(context.Context, db.DBTX) error) error
 }
 
 type githubClient interface {

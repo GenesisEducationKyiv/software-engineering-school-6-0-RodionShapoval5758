@@ -1,7 +1,7 @@
 import { test, expect, type APIRequestContext } from '@playwright/test'
 
 const API_KEY = process.env.API_KEY ?? 'test-api-key'
-const TEST_EMAIL = 'e2e@example.com'
+const TEST_EMAIL = `e2e-${Date.now()}@example.com`
 const TEST_REPO = 'golang/go'
 const MAILPIT_URL = 'http://localhost:8025'
 

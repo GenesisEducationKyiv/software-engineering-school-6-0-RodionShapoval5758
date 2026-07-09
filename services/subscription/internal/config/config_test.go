@@ -11,6 +11,9 @@ import (
 func TestLoadAppliesDefaults(t *testing.T) {
 	clearConfigEnv(t)
 	t.Setenv("DATABASE_URL", "postgres://user:pass@localhost:5432/app")
+	t.Setenv("GRPC_TLS_CA_CERT", "ca.crt")
+	t.Setenv("GRPC_TLS_CERT", "server.crt")
+	t.Setenv("GRPC_TLS_KEY", "server.key")
 
 	cfg, err := Load()
 	require.NoError(t, err)
@@ -49,9 +52,12 @@ func TestLoadValidation(t *testing.T) {
 		{
 			name: "valid explicit config",
 			env: map[string]string{
-				"DATABASE_URL": "postgres://user:pass@localhost:5432/app",
-				"PORT":         "9090",
-				"NATS_URL":     "nats://nats:4222",
+				"DATABASE_URL":     "postgres://user:pass@localhost:5432/app",
+				"PORT":             "9090",
+				"NATS_URL":         "nats://nats:4222",
+				"GRPC_TLS_CA_CERT": "ca.crt",
+				"GRPC_TLS_CERT":    "server.crt",
+				"GRPC_TLS_KEY":     "server.key",
 			},
 		},
 	}
@@ -83,6 +89,9 @@ func clearConfigEnv(t *testing.T) {
 		"GITHUB_TOKEN",
 		"NATS_URL",
 		"API_KEY",
+		"GRPC_TLS_CA_CERT",
+		"GRPC_TLS_CERT",
+		"GRPC_TLS_KEY",
 	} {
 		original, existed := os.LookupEnv(key)
 		if err := os.Unsetenv(key); err != nil {
