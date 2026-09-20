@@ -10,10 +10,10 @@ func TestTrackedRepoHasNewRelease(t *testing.T) {
 		expectNewRel bool
 	}{
 		{
-			name:         "no cursor yet (empty LastSeenTag)",
+			name:         "no cursor yet (baseline, not a new release)",
 			lastSeenTag:  "",
 			incomingTag:  "v1.0.0",
-			expectNewRel: true,
+			expectNewRel: false,
 		},
 		{
 			name:         "same tag, no release",
