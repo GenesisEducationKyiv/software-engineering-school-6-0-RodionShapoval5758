@@ -9,9 +9,12 @@ const (
 	StreamName          = "NOTIFICATIONS"
 	SubjectConfirmation = "notifications.confirmation"
 	SubjectRelease      = "notifications.release"
-	SubjectReleaseFound = "notifications.release_found"
 	SubjectVerifyEmail  = "notifications.verify_email"
 	SubjectAll          = "notifications.>"
+
+	StreamReleases      = "RELEASES"
+	SubjectReleaseFound = "releases.found"
+	SubjectReleasesAll  = "releases.>"
 
 	StreamDLQ   = "NOTIFICATIONS_DLQ"
 	SubjectDead = "dlq.notifications"
