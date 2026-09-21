@@ -1,0 +1,15 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: subscription-config
+  labels:
+    app.kubernetes.io/name: subscription
+    app.kubernetes.io/part-of: github-release-notification
+data:
+  PORT: "8080"
+  GRPC_PORT: "50051"
+  NATS_URL: "nats://nats:4222"
+  AUTH_GRPC_ADDR: "auth:50051"
+  GRPC_TLS_CA_CERT: "/certs/ca.crt"
+  GRPC_TLS_CERT: "/certs/subscription.crt"
+  GRPC_TLS_KEY: "/certs/subscription.key"

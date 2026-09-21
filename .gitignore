@@ -43,3 +43,6 @@ profile.cov
 *.crt
 *.csr
 *.srl
+
+# Kubernetes secrets with real values
+deploy/k8s/**/secret.yaml
