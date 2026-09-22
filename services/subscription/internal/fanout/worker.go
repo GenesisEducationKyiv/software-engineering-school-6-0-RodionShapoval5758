@@ -46,7 +46,7 @@ func NewWorker(js jetstream.JetStream, pool *pgxpool.Pool, recipients recipientL
 }
 
 func (w *Worker) Run(ctx context.Context) error {
-	cons, err := w.js.CreateOrUpdateConsumer(ctx, contract.StreamName, jetstream.ConsumerConfig{
+	cons, err := w.js.CreateOrUpdateConsumer(ctx, contract.StreamReleases, jetstream.ConsumerConfig{
 		Durable:       "fanout-consumer",
 		FilterSubject: contract.SubjectReleaseFound,
 		DeliverPolicy: jetstream.DeliverAllPolicy,

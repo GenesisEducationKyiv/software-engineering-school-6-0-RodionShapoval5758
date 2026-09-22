@@ -121,6 +121,20 @@ func Build(cfg *config.Config) (*App, error) {
 		return nil, fmt.Errorf("ensure saga stream: %w", err)
 	}
 
+	if _, err := js.CreateOrUpdateStream(initCtx, jetstream.StreamConfig{
+		Name:       contract.StreamReleases,
+		Subjects:   []string{contract.SubjectReleasesAll},
+		Storage:    jetstream.FileStorage,
+		Retention:  jetstream.WorkQueuePolicy,
+		Duplicates: 2 * time.Minute,
+		MaxAge:     24 * time.Hour,
+		MaxBytes:   512 * 1024 * 1024,
+	}); err != nil {
+		_ = nc.Drain()
+		dbPool.Close()
+		return nil, fmt.Errorf("ensure releases stream: %w", err)
+	}
+
 	outboxStore := outbox.NewStore()
 	outboxRelay := outbox.NewRelay(dbPool, js, outboxStore)
 
