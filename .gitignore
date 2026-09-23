@@ -43,3 +43,6 @@ profile.cov
 *.crt
 *.csr
 *.srl
+
+# Local Claude Code skills
+.claude/skills/commit/SKILL.md
