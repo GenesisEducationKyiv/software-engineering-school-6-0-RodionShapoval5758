@@ -21,9 +21,9 @@ spec:
           image: github-release-notification-subscription:0.1.0
           imagePullPolicy: IfNotPresent
           ports:
-            - name: http
+            - name: http-public
               containerPort: 8080
-            - name: grpc
+            - name: grpc-internal-monitoring
               containerPort: 50051
           envFrom:
             - configMapRef:
@@ -46,20 +46,20 @@ spec:
           startupProbe:
             httpGet:
               path: /health
-              port: http
+              port: http-public
             periodSeconds: 5
             failureThreshold: 30
           readinessProbe:
             httpGet:
               path: /health
-              port: http
+              port: http-public
             periodSeconds: 10
             timeoutSeconds: 5
             failureThreshold: 5
           # /health pings Postgres and NATS, so liveness must not use it: a dependency outage would restart every pod.
           livenessProbe:
             tcpSocket:
-              port: http
+              port: http-public
             periodSeconds: 10
             failureThreshold: 5
           resources:
