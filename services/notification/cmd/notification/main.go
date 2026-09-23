@@ -2,7 +2,9 @@ package main
 
 import (
 	"context"
+	"errors"
 	"log/slog"
+	"net/http"
 	"os"
 	"os/signal"
 	"syscall"
@@ -11,6 +13,7 @@ import (
 	"GithubReleaseNotificationAPI/contract"
 	"GithubReleaseNotificationAPI/services/notification/internal/config"
 	"GithubReleaseNotificationAPI/services/notification/internal/consumer"
+	"GithubReleaseNotificationAPI/services/notification/internal/health"
 	"GithubReleaseNotificationAPI/services/notification/internal/mailer"
 
 	"github.com/nats-io/nats.go"
@@ -74,7 +77,19 @@ func run() error {
 	m := mailer.NewMailer(cfg.SMTPHost, cfg.SMTPPort, cfg.SMTPUser, cfg.SMTPPass, cfg.FromEmail, cfg.AppBaseURL)
 	c := consumer.New(js, m)
 
-	slog.Info("notification service started")
+	healthMux := http.NewServeMux()
+	healthMux.HandleFunc("/health", health.Handler(map[string]health.Pinger{
+		"nats": &natsPinger{nc: nc},
+	}))
+	healthSrv := &http.Server{Addr: ":" + cfg.Port, Handler: healthMux}
+
+	slog.Info("notification service started", "port", cfg.Port)
+
+	go func() {
+		if err := healthSrv.ListenAndServe(); err != nil && !errors.Is(err, http.ErrServerClosed) {
+			slog.Error("health server error", "error", err)
+		}
+	}()
 
 	go func() {
 		if err := consumer.StartDLQInspector(ctx, js); err != nil {
@@ -82,8 +97,16 @@ func run() error {
 		}
 	}()
 
-	if err := c.Start(ctx); err != nil {
-		return err
+	consumerErr := c.Start(ctx)
+
+	shutdownCtx, cancelShutdown := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancelShutdown()
+	if err := healthSrv.Shutdown(shutdownCtx); err != nil {
+		slog.Error("health server shutdown failed", "error", err)
+	}
+
+	if consumerErr != nil {
+		return consumerErr
 	}
 
 	if err := nc.Drain(); err != nil {
@@ -92,5 +115,14 @@ func run() error {
 
 	slog.Info("shutdown complete")
 
+	return nil
+}
+
+type natsPinger struct{ nc *nats.Conn }
+
+func (n *natsPinger) Ping(_ context.Context) error {
+	if n.nc.Status() != nats.CONNECTED {
+		return errors.New("not connected")
+	}
 	return nil
 }

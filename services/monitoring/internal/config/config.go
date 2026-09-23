@@ -22,6 +22,7 @@ type Config struct {
 	DatabaseURL          string
 	GithubToken          string
 	NATSUrl              string
+	Port                 string
 	ScanInterval         time.Duration
 	SubscriptionGRPCAddr string
 	GRPCTLSCACert        string
@@ -46,6 +47,7 @@ func loadFromEnv() *Config {
 		DatabaseURL:          os.Getenv("DATABASE_URL"),
 		GithubToken:          os.Getenv("GITHUB_TOKEN"),
 		NATSUrl:              os.Getenv("NATS_URL"),
+		Port:                 os.Getenv("PORT"),
 		ScanInterval:         interval,
 		SubscriptionGRPCAddr: os.Getenv("SUBSCRIPTION_GRPC_ADDR"),
 		GRPCTLSCACert:        os.Getenv("GRPC_TLS_CA_CERT"),
@@ -60,6 +62,9 @@ func (c *Config) applyDefaults() {
 	}
 	if c.NATSUrl == "" {
 		c.NATSUrl = "nats://localhost:4222"
+	}
+	if c.Port == "" {
+		c.Port = "8080"
 	}
 }
 

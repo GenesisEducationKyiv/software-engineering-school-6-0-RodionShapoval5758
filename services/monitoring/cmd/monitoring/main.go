@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"log/slog"
 	"net"
@@ -17,11 +18,13 @@ import (
 	monconfig "GithubReleaseNotificationAPI/services/monitoring/internal/config"
 	"GithubReleaseNotificationAPI/services/monitoring/internal/db"
 	"GithubReleaseNotificationAPI/services/monitoring/internal/github"
+	"GithubReleaseNotificationAPI/services/monitoring/internal/health"
 	"GithubReleaseNotificationAPI/services/monitoring/internal/monitoring"
 	monrelay "GithubReleaseNotificationAPI/services/monitoring/internal/relay"
 	"GithubReleaseNotificationAPI/services/monitoring/internal/store"
 	catalogv1 "GithubReleaseNotificationAPI/services/subscription/api/gen/catalogv1/catalog/v1"
 
+	"github.com/jackc/pgx/v5/pgxpool"
 	natsgo "github.com/nats-io/nats.go"
 	"github.com/nats-io/nats.go/jetstream"
 	"google.golang.org/grpc"
@@ -72,6 +75,13 @@ func run() error {
 	if err != nil {
 		return fmt.Errorf("create jetstream: %w", err)
 	}
+
+	healthMux := http.NewServeMux()
+	healthMux.HandleFunc("/health", health.Handler(map[string]health.Pinger{
+		"db":   &dbPinger{pool: pool},
+		"nats": &natsPinger{nc: nc},
+	}))
+	healthSrv := &http.Server{Addr: ":" + cfg.Port, Handler: healthMux}
 
 	cursorStore := store.NewCursorStore(pool)
 	outboxStore := store.NewOutboxStore()
@@ -127,12 +137,25 @@ func run() error {
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
 
-	slog.Info("monitoring service started", "scan_interval", cfg.ScanInterval)
+	slog.Info("monitoring service started", "scan_interval", cfg.ScanInterval, "port", cfg.Port)
 
+	go func() {
+		if err := healthSrv.ListenAndServe(); err != nil && !errors.Is(err, http.ErrServerClosed) {
+			slog.Error("health server error", "error", err)
+		}
+	}()
 	go relay.Run(ctx)
 
-	if err := worker.Start(ctx, cfg.ScanInterval); err != nil {
-		return err
+	workerErr := worker.Start(ctx, cfg.ScanInterval)
+
+	shutdownCtx, cancelShutdown := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancelShutdown()
+	if err := healthSrv.Shutdown(shutdownCtx); err != nil {
+		slog.Error("health server shutdown failed", "error", err)
+	}
+
+	if workerErr != nil {
+		return workerErr
 	}
 
 	if err := nc.Drain(); err != nil {
@@ -159,4 +182,19 @@ func (e *releaseFoundEnqueuer) Enqueue(ctx context.Context, q db.DBTX, dr monito
 	}
 
 	return e.outbox.Insert(ctx, q, contract.SubjectReleaseFound, payload)
+}
+
+type dbPinger struct{ pool *pgxpool.Pool }
+
+func (d *dbPinger) Ping(ctx context.Context) error {
+	return d.pool.Ping(ctx)
+}
+
+type natsPinger struct{ nc *natsgo.Conn }
+
+func (n *natsPinger) Ping(_ context.Context) error {
+	if n.nc.Status() != natsgo.CONNECTED {
+		return errors.New("not connected")
+	}
+	return nil
 }
