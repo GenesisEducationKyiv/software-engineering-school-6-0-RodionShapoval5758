@@ -1,0 +1,79 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: auth
+  labels:
+    app.kubernetes.io/name: auth
+    app.kubernetes.io/part-of: github-release-notification
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: auth
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: auth
+        app.kubernetes.io/part-of: github-release-notification
+    spec:
+      containers:
+        - name: auth
+          image: github-release-notification-auth:0.1.0
+          imagePullPolicy: IfNotPresent
+          ports:
+            - name: http
+              containerPort: 8080
+            - name: grpc
+              containerPort: 50051
+          envFrom:
+            - configMapRef:
+                name: auth-config
+          env:
+            - name: DATABASE_URL
+              valueFrom:
+                secretKeyRef:
+                  name: auth-secret
+                  key: DATABASE_URL
+          volumeMounts:
+            - name: certs
+              mountPath: /certs
+              readOnly: true
+          startupProbe:
+            httpGet:
+              path: /health
+              port: http
+            periodSeconds: 5
+            failureThreshold: 30
+          readinessProbe:
+            httpGet:
+              path: /health
+              port: http
+            periodSeconds: 10
+            timeoutSeconds: 5
+            failureThreshold: 5
+          # /health pings Postgres and NATS, so liveness must not use it: a dependency outage would restart every pod.
+          livenessProbe:
+            tcpSocket:
+              port: http
+            periodSeconds: 10
+            failureThreshold: 5
+          resources:
+            requests:
+              cpu: 50m
+              memory: 64Mi
+            limits:
+              memory: 256Mi
+      volumes:
+        - name: certs
+          secret:
+            secretName: auth-secret
+            # Without items, DATABASE_URL would also be written as a file under /certs.
+            items:
+              - key: ca.crt
+                path: ca.crt
+              - key: auth.crt
+                path: auth.crt
+              - key: auth.key
+                path: auth.key
+              - key: jwt-signing.key
+                path: jwt-signing.key

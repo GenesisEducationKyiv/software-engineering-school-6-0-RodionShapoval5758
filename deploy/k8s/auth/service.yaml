@@ -1,0 +1,20 @@
+apiVersion: v1
+kind: Service
+metadata:
+  # auth's leaf cert SAN is DNS:auth,DNS:localhost,IP:127.0.0.1 — renaming this
+  # Service breaks mTLS for every gRPC client dialing auth:50051.
+  name: auth
+  labels:
+    app.kubernetes.io/name: auth
+    app.kubernetes.io/part-of: github-release-notification
+spec:
+  type: ClusterIP
+  selector:
+    app.kubernetes.io/name: auth
+  ports:
+    - name: http
+      port: 8080
+      targetPort: http
+    - name: grpc
+      port: 50051
+      targetPort: grpc
