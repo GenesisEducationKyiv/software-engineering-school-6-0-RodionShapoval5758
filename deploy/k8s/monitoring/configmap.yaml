@@ -1,0 +1,15 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: monitoring-config
+  labels:
+    app.kubernetes.io/name: monitoring
+    app.kubernetes.io/part-of: github-release-notification
+data:
+  PORT: "8080"
+  SCAN_INTERVAL: "25s"
+  NATS_URL: "nats://nats:4222"
+  SUBSCRIPTION_GRPC_ADDR: "subscription:50051"
+  GRPC_TLS_CA_CERT: "/certs/ca.crt"
+  GRPC_TLS_CERT: "/certs/monitoring.crt"
+  GRPC_TLS_KEY: "/certs/monitoring.key"
