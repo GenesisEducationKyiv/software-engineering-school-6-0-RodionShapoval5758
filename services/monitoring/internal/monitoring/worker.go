@@ -169,6 +169,10 @@ func (w *Worker) processRepository(ctx context.Context, repo TrackedRepo, logger
 		return err
 	}
 
+	if repo.LastSeenTag == "" {
+		return w.seedCursor(ctx, repo, release, logger)
+	}
+
 	if release == nil {
 		return nil
 	}
@@ -204,6 +208,29 @@ func (w *Worker) processRepository(ctx context.Context, repo TrackedRepo, logger
 	return w.catalogClient.UpdateLastSeenTagAtomic(ctx, repo.ID, repo.FullName, release.Tag, func(ctx context.Context, q db.DBTX) error {
 		return w.enqueuer.Enqueue(ctx, q, dr)
 	})
+}
+
+func (w *Worker) seedCursor(ctx context.Context, repo TrackedRepo, release *github.Release, logger *slog.Logger) error {
+	tag := noReleaseYet
+	if release != nil {
+		tag = release.Tag
+	}
+
+	err := w.catalogClient.UpdateLastSeenTagAtomic(ctx, repo.ID, repo.FullName, tag, func(context.Context, db.DBTX) error {
+		return nil
+	})
+	if err != nil {
+		return err
+	}
+
+	logger.Info(
+		"worker seeded release cursor",
+		"repository_id", repo.ID,
+		"repository", repo.FullName,
+		"tag", tag,
+	)
+
+	return nil
 }
 
 func (w *Worker) getLatestRelease(ctx context.Context, repo TrackedRepo, logger *slog.Logger) (*github.Release, error) {
