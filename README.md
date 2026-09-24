@@ -37,11 +37,14 @@ Subscription verifies JWTs locally (ES256): it fetches Auth's public signing key
 - Go, Chi, net/http
 - PostgreSQL + pgx + golang-migrate
 - NATS JetStream (transactional outbox pattern)
+- Prometheus with Grafana
 - GitHub REST API
 - net/smtp / Mailpit for local SMTP
-- Docker / Docker Compose
+- Docker/Podman with Docker Compose
 - GitHub Actions for CI
-- Gemini CLI / Codex CLI for code review and research
+- k6 for load tests
+- gRPC with mTLS
+- Claude Code
 
 ### Endpoints
 
