@@ -1,0 +1,14 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: notification-config
+  labels:
+    app.kubernetes.io/name: notification
+    app.kubernetes.io/part-of: github-release-notification
+data:
+  PORT: "8080"
+  NATS_URL: "nats://nats:4222"
+  SMTP_HOST: "mailpit"
+  SMTP_PORT: "1025"
+  SENDER_EMAIL: "noreply@localhost"
+  MAIN_URL: "http://localhost"
