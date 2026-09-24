@@ -46,3 +46,5 @@ profile.cov
 
 # Kubernetes secrets with real values
 deploy/k8s/**/secret.yaml
+# Local Claude Code skills
+.claude/skills/commit/SKILL.md
