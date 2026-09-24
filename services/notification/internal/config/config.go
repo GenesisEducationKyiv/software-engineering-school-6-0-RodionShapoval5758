@@ -20,6 +20,7 @@ var (
 
 type Config struct {
 	NATSUrl    string
+	Port       string
 	SMTPHost   string
 	SMTPPort   string
 	SMTPUser   string
@@ -43,6 +44,7 @@ func Load() (*Config, error) {
 func loadFromEnv() *Config {
 	return &Config{
 		NATSUrl:    os.Getenv("NATS_URL"),
+		Port:       os.Getenv("PORT"),
 		SMTPHost:   os.Getenv("SMTP_HOST"),
 		SMTPPort:   os.Getenv("SMTP_PORT"),
 		SMTPUser:   os.Getenv("SMTP_USER"),
@@ -55,6 +57,9 @@ func loadFromEnv() *Config {
 func (cfg *Config) applyDefaults() {
 	if cfg.NATSUrl == "" {
 		cfg.NATSUrl = "nats://localhost:4222"
+	}
+	if cfg.Port == "" {
+		cfg.Port = "8080"
 	}
 	if cfg.SMTPPort == "" {
 		cfg.SMTPPort = "1025"
