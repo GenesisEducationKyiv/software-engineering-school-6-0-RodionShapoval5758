@@ -6,7 +6,6 @@ metadata:
     app.kubernetes.io/name: auth
     app.kubernetes.io/part-of: github-release-notification
   annotations:
-    # Separate Ingress object: these annotations apply ingress-wide and must not affect /api or /mail.
     nginx.ingress.kubernetes.io/use-regex: "true"
     nginx.ingress.kubernetes.io/rewrite-target: /$2
 spec:
@@ -14,7 +13,6 @@ spec:
   rules:
     - http:
         paths:
-          # /auth/login -> /login, /auth -> /, matching nginx.conf's trailing-slash prefix strip.
           - path: /auth(/|$)(.*)
             pathType: ImplementationSpecific
             backend:
