@@ -121,3 +121,39 @@ jobs:
           version: v2.11.4
           args: --config=.golangci.yaml ./services/auth/...
           working-directory: .
+
+  publish:
+    needs: [unit-test, lint, integration-test, e2e-test, smoke-test]
+    if: github.event_name == 'push'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+    strategy:
+      matrix:
+        service: [auth, subscription, monitoring, notification, nginx]
+    steps:
+      - name: Checkout repo
+        uses: actions/checkout@v6
+      - name: Log in to GHCR
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      - name: Extract image metadata
+        id: meta
+        uses: docker/metadata-action@v5
+        with:
+          images: ghcr.io/${{ github.repository_owner }}/github-release-notification-${{ matrix.service }}
+          tags: |
+            type=sha,format=long
+            type=raw,value=latest
+      - name: Build and push ${{ matrix.service }}
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: build/${{ matrix.service }}.Dockerfile
+          push: true
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
