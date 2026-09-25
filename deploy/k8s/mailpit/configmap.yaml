@@ -9,5 +9,4 @@ data:
   MP_MAX_MESSAGES: "5000"
   MP_SMTP_AUTH_ACCEPT_ANY: "1"
   MP_SMTP_AUTH_ALLOW_INSECURE: "1"
-  # UI/API served under /mail so the Ingress can route it without a rewrite.
   MP_WEBROOT: "mail"
