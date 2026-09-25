@@ -56,12 +56,12 @@ tasks:
         vars: { SERVICE: monitoring }
 
   k8s-secret-gen-auth:
-    desc: Generate deploy/k8s/auth/secret.yaml from local certs + DATABASE_URL env var
+    desc: Generate deploy/k8s/auth/secret.yaml from local certs + AUTH_DATABASE_URL env var
     deps: [certs-gen]
     cmds:
       - |
         kubectl create secret generic auth-secret \
-          --from-literal=DATABASE_URL="${DATABASE_URL:?DATABASE_URL not set}" \
+          --from-literal=DATABASE_URL="${AUTH_DATABASE_URL:?AUTH_DATABASE_URL not set}" \
           --from-file=ca.crt=certs/ca.crt \
           --from-file=auth.crt=certs/auth.crt \
           --from-file=auth.key=certs/auth.key \
