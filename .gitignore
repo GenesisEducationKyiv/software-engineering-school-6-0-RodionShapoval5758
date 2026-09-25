@@ -1,0 +1,50 @@
+
+# Codex and Gemini
+AGENTS.md
+GEMINI.md
+CLAUDE.md
+.codex
+
+# Binaries
+bin/
+/healthcheck
+*.exe
+*.exe~
+*.dll
+*.so
+*.dylib
+
+# Test binary, built with `go test -c`
+*.test
+
+
+*.out
+coverage.*
+*.coverprofile
+profile.cov
+
+
+# env file
+.env
+
+
+# IDEs
+.idea/
+.vscode/
+*.swp
+*.swo
+
+# OS files
+.DS_Store
+
+# Certs
+/certs/
+*.key
+*.crt
+*.csr
+*.srl
+
+# Kubernetes secrets with real values
+deploy/k8s/**/secret.yaml
+# Local Claude Code skills
+.claude/skills/commit/SKILL.md

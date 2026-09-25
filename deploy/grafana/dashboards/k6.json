@@ -1,0 +1,225 @@
+{
+  "__inputs": [{ "name": "DS_PROMETHEUS", "label": "Prometheus", "type": "datasource", "pluginId": "prometheus" }],
+  "title": "k6 Load Tests",
+  "uid": "k6-load-tests",
+  "refresh": "10s",
+  "time": { "from": "now-15m", "to": "now" },
+  "templating": {
+    "list": [
+      {
+        "name": "datasource",
+        "type": "datasource",
+        "pluginId": "prometheus",
+        "label": "Datasource",
+        "current": {}
+      },
+      {
+        "name": "testid",
+        "type": "query",
+        "datasource": { "type": "prometheus", "uid": "${datasource}" },
+        "query": "label_values(k6_vus, testid)",
+        "label": "Test run",
+        "current": {},
+        "refresh": 2,
+        "includeAll": true,
+        "allValue": ".*",
+        "multi": false
+      }
+    ]
+  },
+  "panels": [
+    {
+      "id": 1,
+      "title": "Request Rate (RPS)",
+      "type": "timeseries",
+      "gridPos": { "x": 0, "y": 0, "w": 8, "h": 7 },
+      "datasource": { "type": "prometheus", "uid": "${datasource}" },
+      "targets": [
+        {
+          "expr": "sum(rate(k6_http_reqs_total{testid=~\"$testid\"}[1m]))",
+          "legendFormat": "RPS"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": { "unit": "reqps", "color": { "mode": "palette-classic" } }
+      }
+    },
+    {
+      "id": 2,
+      "title": "Active VUs",
+      "type": "timeseries",
+      "gridPos": { "x": 8, "y": 0, "w": 8, "h": 7 },
+      "datasource": { "type": "prometheus", "uid": "${datasource}" },
+      "targets": [
+        {
+          "expr": "k6_vus{testid=~\"$testid\"}",
+          "legendFormat": "VUs"
+        },
+        {
+          "expr": "k6_vus_max{testid=~\"$testid\"}",
+          "legendFormat": "max VUs"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": { "unit": "short", "color": { "mode": "palette-classic" } }
+      }
+    },
+    {
+      "id": 3,
+      "title": "Dropped Iterations",
+      "description": "Non-zero = k6 couldn't keep up with the arrival rate. maxVUs was the bottleneck, not the service.",
+      "type": "timeseries",
+      "gridPos": { "x": 16, "y": 0, "w": 8, "h": 7 },
+      "datasource": { "type": "prometheus", "uid": "${datasource}" },
+      "targets": [
+        {
+          "expr": "rate(k6_dropped_iterations_total{testid=~\"$testid\"}[1m])",
+          "legendFormat": "dropped/s"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "color": { "mode": "fixed", "fixedColor": "red" },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [{ "color": "green", "value": null }, { "color": "red", "value": 1 }]
+          }
+        }
+      }
+    },
+    {
+      "id": 4,
+      "title": "Client-side Latency (p95 / p99)",
+      "description": "Client-observed latency from k6 — includes network round-trip. Compare to server-side RED dashboard.",
+      "type": "timeseries",
+      "gridPos": { "x": 0, "y": 7, "w": 12, "h": 8 },
+      "datasource": { "type": "prometheus", "uid": "${datasource}" },
+      "targets": [
+        {
+          "expr": "k6_http_req_duration_p95{testid=~\"$testid\"}",
+          "legendFormat": "p95"
+        },
+        {
+          "expr": "k6_http_req_duration_p99{testid=~\"$testid\"}",
+          "legendFormat": "p99"
+        },
+        {
+          "expr": "k6_http_req_duration_avg{testid=~\"$testid\"}",
+          "legendFormat": "avg"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": { "unit": "ms", "color": { "mode": "palette-classic" } }
+      }
+    },
+    {
+      "id": 5,
+      "title": "Iteration Duration (p95)",
+      "description": "Full iteration time including sleeps and groups. Shows end-to-end journey cost.",
+      "type": "timeseries",
+      "gridPos": { "x": 12, "y": 7, "w": 12, "h": 8 },
+      "datasource": { "type": "prometheus", "uid": "${datasource}" },
+      "targets": [
+        {
+          "expr": "k6_iteration_duration_p95{testid=~\"$testid\"}",
+          "legendFormat": "iter p95"
+        },
+        {
+          "expr": "k6_iteration_duration_avg{testid=~\"$testid\"}",
+          "legendFormat": "iter avg"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": { "unit": "ms", "color": { "mode": "palette-classic" } }
+      }
+    },
+    {
+      "id": 6,
+      "title": "HTTP Error Rate",
+      "type": "timeseries",
+      "gridPos": { "x": 0, "y": 15, "w": 12, "h": 7 },
+      "datasource": { "type": "prometheus", "uid": "${datasource}" },
+      "targets": [
+        {
+          "expr": "rate(k6_http_req_failed_total{testid=~\"$testid\"}[1m])",
+          "legendFormat": "failed/s"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "color": { "mode": "fixed", "fixedColor": "red" }
+        }
+      }
+    },
+    {
+      "id": 7,
+      "title": "Check Pass Rate",
+      "type": "timeseries",
+      "gridPos": { "x": 12, "y": 15, "w": 12, "h": 7 },
+      "datasource": { "type": "prometheus", "uid": "${datasource}" },
+      "targets": [
+        {
+          "expr": "sum(rate(k6_checks_total{testid=~\"$testid\",pass=\"true\"}[1m])) / sum(rate(k6_checks_total{testid=~\"$testid\"}[1m]))",
+          "legendFormat": "pass rate"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "percentunit",
+          "min": 0,
+          "max": 1,
+          "color": { "mode": "palette-classic" },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              { "color": "red",    "value": null },
+              { "color": "yellow", "value": 0.95 },
+              { "color": "green",  "value": 0.99 }
+            ]
+          }
+        }
+      }
+    },
+    {
+      "id": 8,
+      "title": "Subscribe Outcome Breakdown (write-load only)",
+      "description": "Custom counters from write-load.js. Shows the distribution of 200/409/429/404/502 outcomes.",
+      "type": "timeseries",
+      "gridPos": { "x": 0, "y": 22, "w": 24, "h": 8 },
+      "datasource": { "type": "prometheus", "uid": "${datasource}" },
+      "targets": [
+        {
+          "expr": "rate(subscribe_created_total{testid=~\"$testid\"}[1m])",
+          "legendFormat": "created (200)"
+        },
+        {
+          "expr": "rate(subscribe_conflict_total{testid=~\"$testid\"}[1m])",
+          "legendFormat": "conflict (409)"
+        },
+        {
+          "expr": "rate(subscribe_rate_limited_total{testid=~\"$testid\"}[1m])",
+          "legendFormat": "rate limited (429)"
+        },
+        {
+          "expr": "rate(subscribe_repo_not_found_total{testid=~\"$testid\"}[1m])",
+          "legendFormat": "repo not found (404)"
+        },
+        {
+          "expr": "rate(subscribe_bad_token_total{testid=~\"$testid\"}[1m])",
+          "legendFormat": "bad gh token (502)"
+        },
+        {
+          "expr": "rate(subscribe_server_error_total{testid=~\"$testid\"}[1m])",
+          "legendFormat": "server error (5xx)"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": { "unit": "short", "color": { "mode": "palette-classic" } }
+      }
+    }
+  ],
+  "schemaVersion": 38,
+  "version": 1
+}

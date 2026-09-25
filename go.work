@@ -1,0 +1,10 @@
+go 1.26
+
+use (
+	.
+	./services/auth
+	./services/contract
+	./services/monitoring
+	./services/notification
+	./services/subscription
+)

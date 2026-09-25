@@ -1,0 +1,12 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: mailpit-config
+  labels:
+    app.kubernetes.io/name: mailpit
+    app.kubernetes.io/part-of: github-release-notification
+data:
+  MP_MAX_MESSAGES: "5000"
+  MP_SMTP_AUTH_ACCEPT_ANY: "1"
+  MP_SMTP_AUTH_ALLOW_INSECURE: "1"
+  MP_WEBROOT: "mail"
