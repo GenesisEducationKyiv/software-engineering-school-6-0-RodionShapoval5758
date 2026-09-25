@@ -1,12 +1,13 @@
 version: '3'
 
+dotenv: ['.env']
+
 vars:
   COMPOSE:         '{{.COMPOSE         | default "docker compose"}}'
   K6_PROM_URL:     '{{.K6_PROM_URL     | default "http://localhost:9090/api/v1/write"}}'
   K6_BASE_URL:     '{{.K6_BASE_URL     | default "http://localhost"}}'
   K6_MAILPIT_URL:  '{{.K6_MAILPIT_URL  | default "http://localhost:8025"}}'
   K6_TREND_STATS:  '{{.K6_TREND_STATS  | default "p(95),p(99),avg,min,max"}}'
-
 tasks:
   proto:
     desc: Generate protobuf and gRPC code
