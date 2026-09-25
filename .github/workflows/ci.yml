@@ -1,6 +1,19 @@
 name: CI-Pipeline
 on:
   pull_request:
+    paths-ignore:
+      - '**/*.md'
+      - 'deploy/**'
+  push:
+    branches: [main]
+    paths-ignore:
+      - '**/*.md'
+      - 'deploy/**'
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
 env:
   FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
 jobs:
@@ -21,6 +34,8 @@ jobs:
         run: task test-unit
 
   integration-test:
+    needs: [unit-test, lint]
+    if: github.event_name == 'push'
     runs-on: ubuntu-latest
     steps:
       - name: Checkout repo
@@ -37,6 +52,8 @@ jobs:
         run: task test-integration
 
   e2e-test:
+    needs: [unit-test, lint]
+    if: github.event_name == 'push'
     runs-on: ubuntu-latest
     steps:
       - name: Checkout repo
@@ -69,6 +86,8 @@ jobs:
         run: docker compose down -v
 
   smoke-test:
+    needs: [unit-test, lint]
+    if: github.event_name == 'push'
     runs-on: ubuntu-latest
     steps:
       - name: Checkout repo
@@ -97,27 +116,14 @@ jobs:
         uses: actions/setup-go@v6
         with:
           go-version-file: go.mod
-      - name: Lint subscription service
+      - name: Lint services
         uses: golangci/golangci-lint-action@v9
         with:
           version: v2.11.4
-          args: --config=.golangci.yaml ./services/subscription/...
-          working-directory: .
-      - name: Lint monitoring service
-        uses: golangci/golangci-lint-action@v9
-        with:
-          version: v2.11.4
-          args: --config=.golangci.yaml ./services/monitoring/...
-          working-directory: .
-      - name: Lint notification service
-        uses: golangci/golangci-lint-action@v9
-        with:
-          version: v2.11.4
-          args: --config=.golangci.yaml ./services/notification/...
-          working-directory: .
-      - name: Lint auth service
-        uses: golangci/golangci-lint-action@v9
-        with:
-          version: v2.11.4
-          args: --config=.golangci.yaml ./services/auth/...
+          args: >-
+            --config=.golangci.yaml
+            ./services/subscription/...
+            ./services/monitoring/...
+            ./services/notification/...
+            ./services/auth/...
           working-directory: .
